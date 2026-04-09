@@ -142,5 +142,5 @@ bibles_combined.sqlite-shm
 bibles_combined.sqlite-wal
 
 @claude
-.claude
+.claude/
 .claude/settings.local.json
