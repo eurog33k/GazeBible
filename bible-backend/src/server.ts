@@ -64,7 +64,74 @@ const BOOK_NAMES: Record<number, string> = {
   63: '2 John', 64: '3 John', 65: 'Jude', 66: 'Revelation',
 };
 
-// ── Text cleaner ──────────────────────────────────────────────────────────────
+// ── Text helpers ──────────────────────────────────────────────────────────────
+
+function wrapText(text: string, maxLen: number): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    if (!cur) { cur = w; continue; }
+    if ((cur + ' ' + w).length <= maxLen) { cur += ' ' + w; }
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+function cleanDescription(html: string): string[] {
+  let text = html.replace(/\r\n?/g, '\n');
+  // Block elements → newline
+  text = text.replace(/<br\s*\/?>/gi, '\n');
+  text = text.replace(/<\/(?:p|div|h[1-6]|li|tr|td|th|blockquote|pre)>/gi, '\n');
+  text = text.replace(/<(?:p|div|h[1-6]|blockquote|pre|ul|ol|tr)[^>]*>/gi, '\n');
+  // List items → bullet
+  text = text.replace(/<li[^>]*>/gi, '\n• ');
+  // Strip remaining tags
+  text = text.replace(/<[^>]+>/g, '');
+  // Decode entities
+  text = text
+    .replace(/&amp;/gi,    '&')
+    .replace(/&lt;/gi,     '<')
+    .replace(/&gt;/gi,     '>')
+    .replace(/&nbsp;/gi,   ' ')
+    .replace(/&quot;/gi,   '"')
+    .replace(/&apos;/gi,   "'")
+    .replace(/&copy;/gi,   '©')
+    .replace(/&reg;/gi,    '®')
+    .replace(/&trade;/gi,  '™')
+    .replace(/&mdash;/gi,  '—')
+    .replace(/&ndash;/gi,  '–')
+    .replace(/&lsquo;/gi,  '\u2018')
+    .replace(/&rsquo;/gi,  '\u2019')
+    .replace(/&ldquo;/gi,  '\u201C')
+    .replace(/&rdquo;/gi,  '\u201D')
+    .replace(/&Oslash;/g,  'Ø')
+    .replace(/&oslash;/g,  'ø')
+    .replace(/&#(\d+);/g,  (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  // Split, trim each line
+  const rawLines = text.split('\n').map(l => l.trim());
+  // Collapse consecutive blank lines
+  const collapsed: string[] = [];
+  let prevBlank = false;
+  for (const line of rawLines) {
+    const blank = line === '';
+    if (blank && prevBlank) continue;
+    collapsed.push(line);
+    prevBlank = blank;
+  }
+  // Strip leading/trailing blanks
+  while (collapsed.length > 0 && collapsed[0] === '') collapsed.shift();
+  while (collapsed.length > 0 && collapsed[collapsed.length - 1] === '') collapsed.pop();
+  // Word-wrap at 53 chars
+  const result: string[] = [];
+  for (const line of collapsed) {
+    if (line === '') { result.push(''); continue; }
+    result.push(...wrapText(line, 53));
+  }
+  return result;
+}
 
 function cleanText(text: string): string {
   return text
@@ -169,6 +236,21 @@ app.get('/api/verses/:langDir/:bibleFile/:book/:chapter', (req, res) => {
     ).all(book, chapter) as { verse: number; text: string }[];
 
     res.json(rows.map(r => ({ verse: r.verse, text: cleanText(r.text) })));
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── /api/license/:langDir/:bibleFile ─────────────────────────────────────────
+
+app.get('/api/license/:langDir/:bibleFile', (req, res) => {
+  const { langDir, bibleFile } = req.params;
+  try {
+    const db = getDb(langDir, bibleFile);
+    const row = db.prepare("SELECT value FROM meta WHERE field = 'description'").get() as { value: string } | undefined;
+    const raw = row?.value?.trim() ?? '';
+    if (!raw) return void res.json({ lines: ['(no license information)'] });
+    res.json({ lines: cleanDescription(raw) });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

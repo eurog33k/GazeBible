@@ -6,6 +6,12 @@ import {
 } from '@evenrealities/even_hub_sdk';
 import { UI, APP_LANG_NAMES, APP_LANGS, type AppLang } from './i18n';
 
+const SORTED_APP_LANGS = [
+  'en' as AppLang,
+  ...APP_LANGS.filter(c => c !== 'en').sort((a, b) =>
+    APP_LANG_NAMES[a].localeCompare(APP_LANG_NAMES[b])),
+];
+
 // ── SDK bridge (resolved before any other code runs) ─────────────────────────
 
 const bridge = await waitForEvenAppBridge();
@@ -166,13 +172,13 @@ async function showReading(title: string, items: string[]) {
 // Loading shows text in list body (not just title) so screen is never blank
 async function showLoading(msg?: string) {
   const text = msg ?? s().loading;
-  await showList(text, ['', text]);
+  await showList(text, [text]);
 }
 
 // Error shows in list body; double-click goes back
 async function showError(msg: string) {
   // Trim to avoid any SDK length issues
-  await showList('!', ['', msg.slice(0, 48), '', '< double-click to go back']);
+  await showList('!', [msg.slice(0, 48), '', '< double-click to go back']);
 }
 
 // ── App language ──────────────────────────────────────────────────────────────
@@ -183,7 +189,7 @@ function bookName(num: number) { return s().books[num] ?? `Book ${num}`; }
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-type Screen = 'appLang' | 'lang' | 'bible' | 'testament' | 'book' | 'chapter' | 'reading';
+type Screen = 'appLang' | 'lang' | 'bible' | 'testament' | 'book' | 'chapter' | 'reading' | 'license';
 let screen: Screen = 'appLang';
 
 const PAGE_SIZE = 15;
@@ -193,11 +199,14 @@ let selBible:     Bible    | null = null;
 let selTestament: 'OT' | 'NT'    = 'OT';
 let selBook:      BookInfo | null = null;
 let selChapter:   number         = 1;
+let appLangPage:  number         = 0;
 let langPage:     number         = 0;
 let bookPage:     number         = 0;
 let chapterPage:  number         = 0;
 let readingPage:  number         = 0;
-let cachedLines:  string[] | null = null;
+let licensePage:  number         = 0;
+let cachedLines:   string[] | null = null;
+let cachedLicense: string[] | null = null;
 
 let lastAppLangIdx = -1;
 let lastLangIdx    = -1;
@@ -212,19 +221,34 @@ let cachedBooks:  BookInfo[] | null = null;
 // ── Marker helper ─────────────────────────────────────────────────────────────
 
 function withMarker(items: string[], idx: number): string[] {
-  return ['', ...items.map((l, i) => i === idx ? `> ${l}` : `  ${l}`)];
+  return items.map((l, i) => i === idx ? `> ${l}` : `  ${l}`);
 }
 function plain(items: string[]): string[] {
-  return ['', ...items];
+  return items;
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
 async function goAppLang(isBack = false) {
   screen = 'appLang';
-  const labels = APP_LANGS.map(c => APP_LANG_NAMES[c]);
-  const items  = isBack && lastAppLangIdx >= 0 ? withMarker(labels, lastAppLangIdx) : plain(labels);
-  await showList(s().appLangTitle, items);
+  if (isBack && lastAppLangIdx >= 0) appLangPage = Math.floor(lastAppLangIdx / PAGE_SIZE);
+  const pageStart  = appLangPage * PAGE_SIZE;
+  const pageEnd    = Math.min(pageStart + PAGE_SIZE, SORTED_APP_LANGS.length);
+  const pagelangs  = SORTED_APP_LANGS.slice(pageStart, pageEnd);
+  const hasMore    = pageEnd < SORTED_APP_LANGS.length;
+  const hasPrev    = appLangPage > 0;
+  const offset     = hasPrev ? 1 : 0;
+  const labels     = pagelangs.map(c => APP_LANG_NAMES[c]);
+  if (hasPrev) labels.unshift('(back...)');
+  if (hasMore) labels.push('(more...)');
+  let items: string[];
+  if (isBack && lastAppLangIdx >= 0) {
+    const localIdx = lastAppLangIdx - pageStart + offset;
+    items = localIdx >= 0 && localIdx < pagelangs.length + offset ? withMarker(labels, localIdx) : plain(labels);
+  } else {
+    items = plain(labels);
+  }
+  await showList('Language', items);
 }
 
 async function goLang(isBack = false) {
@@ -244,12 +268,15 @@ async function goLang(isBack = false) {
     const pageEnd   = Math.min(pageStart + PAGE_SIZE, cachedLangs.length);
     const pageLangs = cachedLangs.slice(pageStart, pageEnd);
     const hasMore   = pageEnd < cachedLangs.length;
+    const hasPrev   = langPage > 0;
+    const offset    = hasPrev ? 1 : 0;
     const labels    = pageLangs.map(l => l.name);
+    if (hasPrev) labels.unshift('(back...)');
     if (hasMore) labels.push('(more...)');
     let items: string[];
     if (isBack && lastLangIdx >= 0) {
-      const localIdx = lastLangIdx - pageStart;
-      items = localIdx >= 0 && localIdx < pageLangs.length ? withMarker(labels, localIdx) : plain(labels);
+      const localIdx = lastLangIdx - pageStart + offset;
+      items = localIdx >= 0 && localIdx < pageLangs.length + offset ? withMarker(labels, localIdx) : plain(labels);
     } else {
       items = plain(labels);
     }
@@ -280,10 +307,34 @@ async function goBible(isBack = false) {
 async function goTestament(isBack = false) {
   screen = 'testament';
   if (!selBible) return goBible();
+  const opts = [s().oldTestament, s().newTestament, s().license];
   const items = isBack
-    ? withMarker([s().oldTestament, s().newTestament], selTestament === 'OT' ? 0 : 1)
-    : plain([s().oldTestament, s().newTestament]);
+    ? withMarker(opts, selTestament === 'OT' ? 0 : 1)
+    : plain(opts);
   await showList(selBible.shortname, items);
+}
+
+async function goLicense() {
+  screen = 'license';
+  if (!selLang || !selBible) return goTestament();
+  try {
+    if (!cachedLicense) {
+      await showLoading();
+      const data = await apiFetch<{ lines: string[] }>(`/api/license/${selLang.dir}/${selBible.file}`);
+      cachedLicense = data.lines.length ? data.lines : ['(no license information)'];
+    }
+    const pageStart = licensePage * PAGE_SIZE;
+    const pageEnd   = Math.min(pageStart + PAGE_SIZE, cachedLicense.length);
+    const hasMore   = pageEnd < cachedLicense.length;
+    const hasPrev   = licensePage > 0;
+    const pageLines = cachedLicense.slice(pageStart, pageEnd);
+    if (hasPrev) pageLines.unshift('(back...)');
+    if (hasMore) pageLines.push('(more...)');
+    await showReading(s().license, pageLines);
+  } catch (e) {
+    cachedLicense = null;
+    await showError(`${e}`);
+  }
 }
 
 async function goBook(isBack = false) {
@@ -307,13 +358,16 @@ async function goBook(isBack = false) {
     const pageBooks = filtered.slice(pageStart, pageEnd);
     const hasMore   = pageEnd < filtered.length;
 
+    const hasPrev  = bookPage > 0;
+    const offset   = hasPrev ? 1 : 0;
     const labels = pageBooks.map(b => bookName(b.book));
+    if (hasPrev) labels.unshift('(back...)');
     if (hasMore) labels.push('(more...)');
 
     let items: string[];
     if (isBack && lastBookIdx >= 0) {
-      const localIdx = lastBookIdx - pageStart;
-      items = localIdx >= 0 && localIdx < pageBooks.length ? withMarker(labels, localIdx) : plain(labels);
+      const localIdx = lastBookIdx - pageStart + offset;
+      items = localIdx >= 0 && localIdx < pageBooks.length + offset ? withMarker(labels, localIdx) : plain(labels);
     } else {
       items = plain(labels);
     }
@@ -336,12 +390,16 @@ async function goChapter(isBack = false) {
   const pageStart = chapterPage * PAGE_SIZE;
   const pageEnd   = Math.min(pageStart + PAGE_SIZE, total);
   const hasMore   = pageEnd < total;
-  const labels    = Array.from({ length: pageEnd - pageStart }, (_, i) => String(pageStart + i + 1));
+  const hasPrev   = chapterPage > 0;
+  const offset    = hasPrev ? 1 : 0;
+  const pageCount = pageEnd - pageStart;
+  const labels    = Array.from({ length: pageCount }, (_, i) => String(pageStart + i + 1));
+  if (hasPrev) labels.unshift('(back...)');
   if (hasMore) labels.push('(more...)');
   let items: string[];
   if (isBack && lastChapterIdx >= 0) {
-    const localIdx = lastChapterIdx - pageStart;
-    items = localIdx >= 0 && localIdx < (pageEnd - pageStart) ? withMarker(labels, localIdx) : plain(labels);
+    const localIdx = lastChapterIdx - pageStart + offset;
+    items = localIdx >= 0 && localIdx < pageCount + offset ? withMarker(labels, localIdx) : plain(labels);
   } else {
     items = plain(labels);
   }
@@ -364,9 +422,11 @@ async function goReading() {
     const pageStart = readingPage * PAGE_SIZE;
     const pageEnd   = Math.min(pageStart + PAGE_SIZE, allLines.length);
     const hasMore   = pageEnd < allLines.length;
+    const hasPrev   = readingPage > 0;
     const pageLines = allLines.slice(pageStart, pageEnd);
+    if (hasPrev) pageLines.unshift('(back...)');
     if (hasMore) pageLines.push('(more...)');
-    await showReading(title, ['', ...pageLines]);
+    await showReading(title, pageLines);
   } catch (e) {
     await showError(`${e}`);
   }
@@ -408,19 +468,26 @@ bridge.onEvenHubEvent(async (event) => {
     if (screen === 'book')      return goTestament(true);
     if (screen === 'chapter')   return goBook(true);
     if (screen === 'reading')   return goChapter(true);
+    if (screen === 'license')   return goTestament(true);
     return;
   }
 
   if (type === 1 || type === 2) return; // scroll — handled by list widget natively
   if (type !== 0) return;               // ignore anything else
 
-  const real = idx - 1; // subtract dummy '' at index 0
-  if (real < 0) return;
-
   if (screen === 'appLang') {
-    if (real >= APP_LANGS.length) return;
-    lastAppLangIdx = real;
-    appLang = APP_LANGS[real];
+    const pageStart   = appLangPage * PAGE_SIZE;
+    const pageEnd     = Math.min(pageStart + PAGE_SIZE, SORTED_APP_LANGS.length);
+    const pagelangs   = SORTED_APP_LANGS.slice(pageStart, pageEnd);
+    const hasMore     = pageEnd < SORTED_APP_LANGS.length;
+    const hasPrev     = appLangPage > 0;
+    const offset      = hasPrev ? 1 : 0;
+    if (hasPrev && idx === 0) { appLangPage--; return goAppLang(); }
+    if (hasMore && idx === pagelangs.length + offset) { appLangPage++; return goAppLang(); }
+    const realIdx = idx - offset;
+    if (realIdx < 0 || realIdx >= pagelangs.length) return;
+    lastAppLangIdx = pageStart + realIdx;
+    appLang        = pagelangs[realIdx];
     await saveAppLang(appLang);
     cachedLangs = null;
     langPage    = 0;
@@ -434,10 +501,14 @@ bridge.onEvenHubEvent(async (event) => {
     const pageEnd   = Math.min(pageStart + PAGE_SIZE, cachedLangs.length);
     const pageLangs = cachedLangs.slice(pageStart, pageEnd);
     const hasMore   = pageEnd < cachedLangs.length;
-    if (hasMore && real === pageLangs.length) { langPage++; return goLang(); }
-    if (real >= pageLangs.length) return;
-    lastLangIdx  = pageStart + real;
-    selLang      = pageLangs[real];
+    const hasPrev   = langPage > 0;
+    const offset    = hasPrev ? 1 : 0;
+    if (hasPrev && idx === 0) { langPage--; return goLang(); }
+    if (hasMore && idx === pageLangs.length + offset) { langPage++; return goLang(); }
+    const realIdx = idx - offset;
+    if (realIdx < 0 || realIdx >= pageLangs.length) return;
+    lastLangIdx  = pageStart + realIdx;
+    selLang      = pageLangs[realIdx];
     cachedBibles = null;
     cachedBooks  = null;
     bookPage     = 0;
@@ -445,17 +516,20 @@ bridge.onEvenHubEvent(async (event) => {
   }
 
   if (screen === 'bible') {
-    if (!cachedBibles || real >= cachedBibles.length) return;
-    lastBibleIdx = real;
-    selBible     = cachedBibles[real];
-    cachedBooks  = null;
-    bookPage     = 0;
+    if (!cachedBibles || idx >= cachedBibles.length) return;
+    lastBibleIdx  = idx;
+    selBible      = cachedBibles[idx];
+    cachedBooks   = null;
+    cachedLicense = null;
+    bookPage      = 0;
+    licensePage   = 0;
     if (selLang) await savePrefs(selLang, selBible);
     return goTestament();
   }
 
   if (screen === 'testament') {
-    selTestament = real === 0 ? 'OT' : 'NT';
+    if (idx === 2) return goLicense();
+    selTestament = idx === 0 ? 'OT' : 'NT';
     bookPage = 0;
     return goBook();
   }
@@ -467,10 +541,14 @@ bridge.onEvenHubEvent(async (event) => {
     const pageEnd   = Math.min(pageStart + PAGE_SIZE, filtered.length);
     const pageBooks = filtered.slice(pageStart, pageEnd);
     const hasMore   = pageEnd < filtered.length;
-    if (hasMore && real === pageBooks.length) { bookPage++; return goBook(); }
-    if (real >= pageBooks.length) return;
-    lastBookIdx  = pageStart + real;
-    selBook      = pageBooks[real];
+    const hasPrev   = bookPage > 0;
+    const offset    = hasPrev ? 1 : 0;
+    if (hasPrev && idx === 0) { bookPage--; return goBook(); }
+    if (hasMore && idx === pageBooks.length + offset) { bookPage++; return goBook(); }
+    const realIdx = idx - offset;
+    if (realIdx < 0 || realIdx >= pageBooks.length) return;
+    lastBookIdx  = pageStart + realIdx;
+    selBook      = pageBooks[realIdx];
     chapterPage  = 0;
     return goChapter();
   }
@@ -481,10 +559,14 @@ bridge.onEvenHubEvent(async (event) => {
     const pageEnd      = Math.min(pageStart + PAGE_SIZE, selBook.chapters);
     const pageCount    = pageEnd - pageStart;
     const hasMore      = pageEnd < selBook.chapters;
-    if (hasMore && real === pageCount) { chapterPage++; return goChapter(); }
-    if (real >= pageCount) return;
-    lastChapterIdx = pageStart + real;
-    selChapter     = pageStart + real + 1;
+    const hasPrev      = chapterPage > 0;
+    const offset       = hasPrev ? 1 : 0;
+    if (hasPrev && idx === 0) { chapterPage--; return goChapter(); }
+    if (hasMore && idx === pageCount + offset) { chapterPage++; return goChapter(); }
+    const realIdx = idx - offset;
+    if (realIdx < 0 || realIdx >= pageCount) return;
+    lastChapterIdx = pageStart + realIdx;
+    selChapter     = pageStart + realIdx + 1;
     readingPage    = 0;
     cachedLines    = null;
     return goReading();
@@ -496,9 +578,23 @@ bridge.onEvenHubEvent(async (event) => {
     const pageStart = readingPage * PAGE_SIZE;
     const pageEnd   = Math.min(pageStart + PAGE_SIZE, allLines.length);
     const hasMore   = pageEnd < allLines.length;
+    const hasPrev   = readingPage > 0;
     const pageCount = pageEnd - pageStart;
-    if (hasMore && real === pageCount) { readingPage++; return goReading(); }
-    // Single click on verse text: no action
+    const offset    = hasPrev ? 1 : 0;
+    if (hasPrev && idx === 0) { readingPage--; return goReading(); }
+    if (hasMore && idx === pageCount + offset) { readingPage++; return goReading(); }
+  }
+
+  if (screen === 'license') {
+    if (!cachedLicense) return;
+    const pageStart = licensePage * PAGE_SIZE;
+    const pageEnd   = Math.min(pageStart + PAGE_SIZE, cachedLicense.length);
+    const hasMore   = pageEnd < cachedLicense.length;
+    const hasPrev   = licensePage > 0;
+    const pageCount = pageEnd - pageStart;
+    const offset    = hasPrev ? 1 : 0;
+    if (hasPrev && idx === 0) { licensePage--; return goLicense(); }
+    if (hasMore && idx === pageCount + offset) { licensePage++; return goLicense(); }
   }
 });
 
@@ -515,7 +611,7 @@ async function start() {
 
   if (savedLang) {
     appLang = savedLang;
-    lastAppLangIdx = APP_LANGS.indexOf(appLang);
+    lastAppLangIdx = SORTED_APP_LANGS.indexOf(appLang);
   }
 
   if (savedPrefs) {

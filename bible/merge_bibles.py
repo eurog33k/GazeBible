@@ -18,6 +18,35 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SOURCE_DIR = os.path.join(BASE_DIR, "bibles_sqlite_6.0")
 OUTPUT_DB = os.path.join(BASE_DIR, "bibles_combined.sqlite")
 
+# Languages excluded from the combined database.
+# Reasons: unsupported display script, or insufficient/academic-only content.
+# Supported scripts (included): Latin, Cyrillic, CJK (Chinese/Japanese/Korean).
+EXCLUDED_LANGS = {
+    # Unsupported scripts — Even G2 display cannot render these
+    "AM",   # Amharic    — Ethiopic script
+    "AR",   # Arabic     — Arabic script
+    "BN",   # Bengali    — Bengali script
+    "BO",   # Tibetan    — Tibetan script
+    "FA",   # Persian    — Arabic script
+    "GU",   # Gujarati   — Gujarati script
+    "HE",   # Hebrew     — Hebrew script
+    "HI",   # Hindi      — Devanagari
+    "KN",   # Kannada    — Kannada script
+    "MR",   # Marathi    — Devanagari
+    "MY",   # Burmese    — Myanmar script
+    "NE",   # Nepali     — Devanagari
+    "PA",   # Punjabi    — Gurmukhi script
+    "TA",   # Tamil      — Tamil script
+    "TE",   # Telugu     — Telugu script
+    "TH",   # Thai       — Thai script
+    "UG",   # Uighur     — Perso-Arabic script
+    "UR",   # Urdu       — Arabic script
+    # Insufficient or academic-only content
+    "GRC",  # Ancient Greek — academic only (no modern readers)
+    "JV",   # Javanese      — NT only, partial (7,753 verses)
+    "TG",   # Tajik         — very incomplete (4,344 verses)
+}
+
 
 def create_schema(conn):
     conn.executescript("""
@@ -124,7 +153,11 @@ def main():
 
     for db_path in db_files:
         lang_folder = os.path.basename(os.path.dirname(db_path))
-        db_name = os.path.basename(db_path)
+        lang_code   = lang_folder.split("-")[0].upper()
+        db_name     = os.path.basename(db_path)
+        if lang_code in EXCLUDED_LANGS:
+            print(f"[{lang_folder}] {db_name}  — SKIPPED (unsupported script)")
+            continue
         print(f"[{lang_folder}] {db_name}")
         n = import_db(dest_conn, db_path, lang_folder)
         if n > 0:
