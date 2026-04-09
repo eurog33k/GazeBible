@@ -144,3 +144,6 @@ bibles_combined.sqlite-wal
 @claude
 .claude/
 .claude/settings.local.json
+
+#docs from evenrealities discord
+.docs/
