@@ -43,25 +43,6 @@ function getDb(langDir: string, bibleFile: string): Database.Database {
   return dbCache.get(key)!;
 }
 
-// ── Excluded modules (no confirmed free-use license) ─────────────────────────
-
-const EXCLUDED_MODULES = new Set([
-  'elberfelder_1905',  // de — Copyright R. Bockhaus Verlages, no free-use grant
-  'luther_1912',       // de — 1912 revision, no license statement
-  'almeida_ra',        // pt — no explicit license statement
-  'almeida_rc',        // pt — no explicit license statement
-  'cornilescu',        // ro — known UBS copyright, description silent
-  'epee',              // fr — 2005 edition, no license statement
-  'indo_tm',           // id — no license statement
-  'oster',             // fr — 1996 revision, no license statement
-  // Entire language folders also excluded (see merge_bibles.py EXCLUDED_LANGS):
-  // HT (hcv), HU (karoli), KO (korean), LV (lv_gluck_8),
-  // MI (maori), SQ (albanian), TR (turkish), ZH (all Chinese entries)
-  'hcv', 'karoli', 'korean', 'lv_gluck_8', 'maori', 'albanian', 'turkish',
-  'chinese_union_simp', 'chinese_union_simp_s', 'chinese_union_trad',
-  'chinese_union_trad_s', 'ckjv_sds', 'ckjv_sdt',
-]);
-
 // ── Book name mapping (standard English names, 1-66) ─────────────────────────
 
 const BOOK_NAMES: Record<number, string> = {
@@ -200,7 +181,7 @@ app.get('/api/bibles/:langDir', (req, res) => {
   if (!fs.existsSync(langPath)) return void res.status(404).json({ error: 'Language not found' });
 
   const files = fs.readdirSync(langPath)
-    .filter(f => f.endsWith('.sqlite') && !EXCLUDED_MODULES.has(f.replace('.sqlite', '')));
+    .filter(f => f.endsWith('.sqlite'));
   const bibles = files.map(file => {
     const bibleFile = file.replace('.sqlite', '');
     try {
@@ -267,10 +248,28 @@ app.get('/api/license/:langDir/:bibleFile', (req, res) => {
   const { langDir, bibleFile } = req.params;
   try {
     const db = getDb(langDir, bibleFile);
-    const row = db.prepare("SELECT value FROM meta WHERE field = 'description'").get() as { value: string } | undefined;
-    const raw = row?.value?.trim() ?? '';
-    if (!raw) return void res.json({ lines: ['(no license information)'] });
-    res.json({ lines: cleanDescription(raw) });
+    const rows = db.prepare(
+      "SELECT field, value FROM meta WHERE field IN ('description', 'copyright_statement')"
+    ).all() as { field: string; value: string }[];
+    const meta: Record<string, string> = {};
+    for (const r of rows) meta[r.field] = r.value?.trim() ?? '';
+
+    const lines: string[] = [];
+
+    if (meta['copyright_statement']) {
+      lines.push(...wrapText(meta['copyright_statement'], 53));
+    }
+
+    if (meta['description']) {
+      const descLines = cleanDescription(meta['description']);
+      if (descLines.length > 0) {
+        if (lines.length > 0) lines.push('');
+        lines.push(...descLines);
+      }
+    }
+
+    if (lines.length === 0) return void res.json({ lines: ['(no license information)'] });
+    res.json({ lines });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

@@ -1,7 +1,7 @@
 # GazeBible
 God's Word for the world.
 
-A Bible reader for the Even G2 smart glasses — 44 translations across 22 languages, all confirmed free for non-commercial use.
+A Bible reader for the Even G2 smart glasses — 65 translations across 30 languages, all confirmed free for non-commercial use.
 
 ---
 

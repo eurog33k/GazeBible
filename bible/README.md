@@ -8,64 +8,40 @@ The combined database is **not included** in this repository because it exceeds 
 
 ## Supported languages
 
-44 translations across 22 languages. Only languages with at least one confirmed free-use translation are included as app UI languages.
+65 translations across 30 languages. Only languages with at least one confirmed free-use translation are included as app UI languages.
 
 | Language | Translations |
 |----------|-------------|
 | Afrikaans | Afrikaans 1953 |
+| Albanian | Albanian |
+| Chinese | Union — Simplified, Union — Simplified w Strong's, Union — Traditional, Union — Traditional w Strong's, KJV Simplified (Shang-Di), KJV Traditional (Shang-Di) |
 | Czech | Bible Kralická |
-| German | Elberfelder 1871, Luther 1545, Schlachter |
+| German | Elberfelder 1871, Elberfelder 1905, Luther 1545, Luther 1912, Schlachter |
 | English | ASV, ASV w Strong's, Bishops, Coverdale, Geneva, KJV, KJV w Strong's, NET, Tyndale, WEB |
 | Spanish | Reina Valera 1858 NT, Reina Valera 1909, RV 1909 w Strong's, Reina Valera Gómez 2004, Reina Valera Gómez 2010, Sagradas Escrituras |
 | Finnish | Finnish 1776 |
-| French | Martin 1744, Segond 1910 |
+| French | La Bible de l'Épée, Martin 1744, Ostervald, Segond 1910 |
+| Haitian Creole | Haitian Creole Version |
 | Hausa | Contemporary Bible, Litafi Mai-tsarki |
-| Indonesian | Terjemahan Baru |
+| Hungarian | Károli |
+| Indonesian | Terjemahan Baru, Terjemahan Lama |
 | Italian | Diodati |
 | Japanese | Bungo-yaku, Kougo-yaku |
+| Korean | Korean Bible |
+| Latvian | Glück 8th Edition |
 | Lithuanian | Tikinčiųjų Paveldo Vertimas |
+| Māori | Maori Bible |
 | Dutch | Staten Vertaling |
 | Polish | Nowa Biblia Gdańska, Uwspółcześniona Biblia Gdańska, Polska Biblia Gdańska |
-| Portuguese | Bíblia Livre |
-| Romanian | Fidela |
+| Portuguese | Almeida Revista e Atualizada, Almeida Revista e Corrigida, Bíblia Livre |
+| Romanian | Cornilescu, Fidela |
 | Russian | Synodal |
 | Somali | Kitaabka Quduuska Ah |
 | Swahili | Swahili NT |
 | Tagalog | Ang Biblia |
+| Turkish | Turkish Bible |
 | Vietnamese | Vietnamese Cadman |
 | Wolof | Kàddug Yàlla gi, Téereb Injiil |
-
----
-
-## Removed translations
-
-The following 21 translations were removed because their license is unclear, missing, or known to be restricted. All others are either public domain or confirmed free for non-commercial use.
-
-| Module | Name | Language | Reason |
-|--------|------|----------|--------|
-| elberfelder_1905 | Elberfelder (1905) | German | Copyright R. Bockhaus Verlages — no free-use grant |
-| luther_1912 | Luther Bible (1912) | German | 1912 revision — no license statement |
-| albanian | Albanian | Albanian | No license statement |
-| almeida_ra | Almeida Revista e Atualizada | Portuguese | No explicit license statement |
-| almeida_rc | Almeida Revista e Corrigida | Portuguese | No explicit license statement |
-| chinese_union_simp | Chinese Union — Simplified | Chinese | No license statement |
-| chinese_union_simp_s | Chinese Union — Simplified w Strong's | Chinese | No license statement |
-| chinese_union_trad | Chinese Union — Traditional | Chinese | No license statement |
-| chinese_union_trad_s | Chinese Union — Traditional w Strong's | Chinese | No license statement |
-| ckjv_sds | Chinese KJV Simplified (Shang-Di) | Chinese | No license statement |
-| ckjv_sdt | Chinese KJV Traditional (Shang-Di) | Chinese | No license statement |
-| cornilescu | Cornilescu | Romanian | Known UBS copyright; description silent |
-| epee | La Bible de l'Épée | French | 2005 edition — no license statement |
-| hcv | Haitian Creole Version | Haitian Creole | No license statement |
-| indo_tm | Terjemahan Lama | Indonesian | No license statement |
-| karoli | Károli | Hungarian | No license statement |
-| korean | Korean Bible | Korean | Translation unspecified, no license statement |
-| lv_gluck_8 | Glück 8th Edition | Latvian | No license statement |
-| maori | Maori Bible | Māori | No license statement |
-| oster | Ostervald | French | 1996 revision — no license statement |
-| turkish | Turkish Bible | Turkish | Translation unspecified, no license statement |
-
-For the full per-translation license audit, see `LICENSES.md`.
 
 ---
 
@@ -81,7 +57,7 @@ Delete `bibles_combined.sqlite` first if it already exists (the script will refu
 This produces `bibles_combined.sqlite` with the schema:
 
 ```
-versions (id, module, name, shortname, lang, lang_short, year, copyright, description)
+versions (id, module, name, shortname, lang, lang_short, year, copyright, description, copyright_statement)
 verses   (id, version_id, book, chapter, verse, text)
 ```
 
