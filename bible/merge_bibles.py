@@ -20,7 +20,8 @@ OUTPUT_DB = os.path.join(BASE_DIR, "bibles_combined.sqlite")
 
 # Languages excluded from the combined database.
 # Reasons: unsupported display script, or insufficient/academic-only content.
-# Supported scripts (included): Latin, Cyrillic, CJK (Chinese/Japanese/Korean).
+# Supported scripts (included): Latin, Cyrillic.
+# Chinese/Japanese/Korean were removed due to unclear or missing license statements.
 EXCLUDED_LANGS = {
     # Unsupported scripts — Even G2 display cannot render these
     "AM",   # Amharic    — Ethiopic script
@@ -45,6 +46,28 @@ EXCLUDED_LANGS = {
     "GRC",  # Ancient Greek — academic only (no modern readers)
     "JV",   # Javanese      — NT only, partial (7,753 verses)
     "TG",   # Tajik         — very incomplete (4,344 verses)
+    # No confirmed free-use license — all translations unclear or restricted
+    "HT",   # Haitian Creole — HCV has no license statement
+    "HU",   # Hungarian      — Károli has no license statement
+    "KO",   # Korean         — translation unspecified, no license statement
+    "LV",   # Latvian        — Glück 8th ed. has no license statement
+    "MI",   # Māori          — no license statement
+    "SQ",   # Albanian       — no license statement
+    "TR",   # Turkish        — translation unspecified, no license statement
+    "ZH",   # Chinese        — all CUV/CKJV entries have no license statement
+}
+
+# Individual translations excluded within otherwise-kept language folders.
+# Reasons: active copyright with no free-use grant, or no license statement.
+EXCLUDED_MODULES = {
+    "elberfelder_1905",  # de — Copyright R. Bockhaus Verlages, no free-use grant
+    "luther_1912",       # de — 1912 revision, no license statement
+    "almeida_ra",        # pt — no explicit license statement
+    "almeida_rc",        # pt — no explicit license statement
+    "cornilescu",        # ro — known UBS copyright, description silent
+    "epee",              # fr — 2005 edition, no license statement
+    "indo_tm",           # id — no license statement
+    "oster",             # fr — 1996 revision, no license statement
 }
 
 
@@ -156,7 +179,11 @@ def main():
         lang_code   = lang_folder.split("-")[0].upper()
         db_name     = os.path.basename(db_path)
         if lang_code in EXCLUDED_LANGS:
-            print(f"[{lang_folder}] {db_name}  — SKIPPED (unsupported script)")
+            print(f"[{lang_folder}] {db_name}  — SKIPPED (excluded language)")
+            continue
+        module_name = os.path.splitext(db_name)[0]
+        if module_name in EXCLUDED_MODULES:
+            print(f"[{lang_folder}] {db_name}  — SKIPPED (excluded module)")
             continue
         print(f"[{lang_folder}] {db_name}")
         n = import_db(dest_conn, db_path, lang_folder)
