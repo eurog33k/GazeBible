@@ -894,4 +894,38 @@ export const APP_LANG_NAMES: Record<AppLang, string> = {
   mi: 'Māori',
 };
 
+// English name for each language — used for display suffix and sort key for non-Latin scripts
+export const APP_LANG_ENGLISH_NAMES: Record<AppLang, string> = {
+  en: 'English',
+  nl: 'Dutch',
+  fr: 'French',
+  de: 'German',
+  es: 'Spanish',
+  pt: 'Portuguese',
+  it: 'Italian',
+  pl: 'Polish',
+  af: 'Afrikaans',
+  cs: 'Czech',
+  fi: 'Finnish',
+  id: 'Indonesian',
+  ro: 'Romanian',
+  sw: 'Swahili',
+  tl: 'Tagalog',
+  ru: 'Russian',
+  ja: 'Japanese',
+  vi: 'Vietnamese',
+  ha: 'Hausa',
+  lt: 'Lithuanian',
+  so: 'Somali',
+  wo: 'Wolof',
+  hu: 'Hungarian',
+  tr: 'Turkish',
+  zh: 'Chinese',
+  ko: 'Korean',
+  sq: 'Albanian',
+  lv: 'Latvian',
+  ht: 'Haitian Creole',
+  mi: 'Maori',
+};
+
 export const APP_LANGS = Object.keys(APP_LANG_NAMES) as AppLang[];

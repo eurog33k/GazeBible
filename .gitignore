@@ -147,3 +147,7 @@ bibles_combined.sqlite-wal
 
 #docs from evenrealities discord
 docs/
+
+#EvenHub documentation files
+EVENHUB_QUICKSTART.md
+EVENHUB_GUIDE.md

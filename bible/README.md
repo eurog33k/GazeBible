@@ -21,11 +21,7 @@ The combined database is **not included** in this repository because it exceeds 
 | Chinese | KJV Simplified (Shang-Di) | CC BY-SA 3.0 |
 | Chinese | KJV Traditional (Shang-Di) | CC BY-SA 3.0 |
 | Czech | Bible Kralická | Public domain |
-| German | Elberfelder 1871 | Public domain |
-| German | Elberfelder 1905 | Public domain |
-| German | Luther 1545 | Public domain |
-| German | Luther 1912 | Public domain |
-| German | Schlachter | Non-commercial |
+| Dutch | Staten Vertaling | Public domain |
 | English | ASV | Public domain |
 | English | ASV w Strong's | Public domain |
 | English | Bishops | Public domain |
@@ -36,17 +32,16 @@ The combined database is **not included** in this repository because it exceeds 
 | English | NET | Non-commercial |
 | English | Tyndale | Public domain |
 | English | WEB | Public domain |
-| Spanish | Reina Valera 1858 NT | Public domain |
-| Spanish | Reina Valera 1909 | Public domain |
-| Spanish | RV 1909 w Strong's | Public domain |
-| Spanish | Reina Valera Gómez 2004 | Non-commercial |
-| Spanish | Reina Valera Gómez 2010 | Non-commercial |
-| Spanish | Sagradas Escrituras | Public domain |
 | Finnish | Finnish 1776 | Public domain |
 | French | La Bible de l'Épée | Public domain |
 | French | Martin 1744 | Public domain |
 | French | Ostervald | Public domain |
 | French | Segond 1910 | Public domain |
+| German | Elberfelder 1871 | Public domain |
+| German | Elberfelder 1905 | Public domain |
+| German | Luther 1545 | Public domain |
+| German | Luther 1912 | Public domain |
+| German | Schlachter | Non-commercial |
 | Haitian Creole | Haitian Creole Version | Public domain |
 | Hausa | Contemporary Bible | CC BY-SA 4.0 |
 | Hausa | Litafi Mai-tsarki | CC BY-SA 4.0 |
@@ -60,7 +55,6 @@ The combined database is **not included** in this repository because it exceeds 
 | Latvian | Glück 8th Edition | Public domain |
 | Lithuanian | Tikinčiųjų Paveldo Vertimas | CC BY-SA 4.0 |
 | Māori | Maori Bible | Public domain |
-| Dutch | Staten Vertaling | Public domain |
 | Polish | Nowa Biblia Gdańska | Free (no rights reserved) |
 | Polish | Uwspółcześniona Biblia Gdańska | Non-commercial |
 | Polish | Polska Biblia Gdańska | Public domain |
@@ -71,6 +65,12 @@ The combined database is **not included** in this repository because it exceeds 
 | Romanian | Fidela | Free (attribution) |
 | Russian | Synodal | Public domain |
 | Somali | Kitaabka Quduuska Ah | Non-commercial |
+| Spanish | Reina Valera 1858 NT | Public domain |
+| Spanish | Reina Valera 1909 | Public domain |
+| Spanish | RV 1909 w Strong's | Public domain |
+| Spanish | Reina Valera Gómez 2004 | Non-commercial |
+| Spanish | Reina Valera Gómez 2010 | Non-commercial |
+| Spanish | Sagradas Escrituras | Public domain |
 | Swahili | Swahili NT | Public domain |
 | Tagalog | Ang Biblia | Public domain |
 | Turkish | Turkish Bible | Public domain |

@@ -4,12 +4,25 @@ import {
   TextContainerProperty, ListContainerProperty, ListItemContainerProperty,
   StartUpPageCreateResult,
 } from '@evenrealities/even_hub_sdk';
-import { UI, APP_LANG_NAMES, APP_LANGS, type AppLang } from './i18n';
+import { UI, APP_LANG_NAMES, APP_LANG_ENGLISH_NAMES, APP_LANGS, type AppLang } from './i18n';
+
+// For non-Latin scripts sort by English name, otherwise by native name.
+function langSortKey(lang: AppLang): string {
+  const native = APP_LANG_NAMES[lang];
+  return /[^\u0000-\u024F]/.test(native) ? APP_LANG_ENGLISH_NAMES[lang] : native;
+}
+
+// Display as "Native (English)" — omit suffix when the two names are identical.
+function langDisplayLabel(lang: AppLang): string {
+  const native  = APP_LANG_NAMES[lang];
+  const english = APP_LANG_ENGLISH_NAMES[lang];
+  return native === english ? native : `${native} (${english})`;
+}
 
 const SORTED_APP_LANGS = [
   'en' as AppLang,
   ...APP_LANGS.filter(c => c !== 'en').sort((a, b) =>
-    APP_LANG_NAMES[a].localeCompare(APP_LANG_NAMES[b])),
+    langSortKey(a).localeCompare(langSortKey(b))),
 ];
 
 // ── SDK bridge (resolved before any other code runs) ─────────────────────────
@@ -238,7 +251,7 @@ async function goAppLang(isBack = false) {
   const hasMore    = pageEnd < SORTED_APP_LANGS.length;
   const hasPrev    = appLangPage > 0;
   const offset     = hasPrev ? 1 : 0;
-  const labels     = pagelangs.map(c => APP_LANG_NAMES[c]);
+  const labels     = pagelangs.map(c => langDisplayLabel(c));
   if (hasPrev) labels.unshift('(back...)');
   if (hasMore) labels.push('(more...)');
   let items: string[];
@@ -270,7 +283,10 @@ async function goLang(isBack = false) {
     const hasMore   = pageEnd < cachedLangs.length;
     const hasPrev   = langPage > 0;
     const offset    = hasPrev ? 1 : 0;
-    const labels    = pageLangs.map(l => l.name);
+    const labels    = pageLangs.map(l => {
+      const code = l.code.toLowerCase() as AppLang;
+      return APP_LANG_NAMES[code] ? langDisplayLabel(code) : l.name;
+    });
     if (hasPrev) labels.unshift('(back...)');
     if (hasMore) labels.push('(more...)');
     let items: string[];
