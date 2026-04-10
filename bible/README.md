@@ -1,6 +1,7 @@
 # Bible data
 
 The bible data is **not included** in this repository because the combined database (~607 MB) exceeds GitHub's file size limits.
+You can find it at https://www.biblesupersearch.com/bible-downloads/ or rebuild it so it includes only the supported languages
 
 ## Source data
 
