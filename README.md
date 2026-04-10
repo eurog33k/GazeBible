@@ -1,4 +1,4 @@
-# evenrealities
+# GazeBible
 God's Word for the world.
 
 A Bible reader for the Even G2 smart glasses — browse translations in 30+ languages, read any book and chapter, all on your glasses display.
