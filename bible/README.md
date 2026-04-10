@@ -8,7 +8,7 @@ The combined database is **not included** in this repository because it exceeds 
 
 ## Supported languages
 
-65 translations across 30 languages. Only languages with at least one confirmed free-use translation are included as app UI languages.
+65 translations across 30 languages. Languages are only excluded when the Even G2 display cannot render the script, or the content is too sparse to be useful.
 
 | Language | Translations |
 |----------|-------------|
