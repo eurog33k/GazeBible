@@ -112,32 +112,11 @@ server {
 
 ## Changing the app language
 
-The language is selected **inside the app** at runtime — it's the first screen you see.
-Navigate: **Language → Bible version → OT/NT → Book → Chapter**.
+Every launch starts with the **splash screen**. Click through it and the app goes to:
+- The OT/NT screen directly, if a Bible was previously selected.
+- The language picker, if no Bible has been selected yet.
 
-To change it: double-click to go back all the way to the language screen and pick a different one.
-
-If you want to **default to a specific language** at startup, change line 1 of `even-bible/src/main.ts`:
-
-```typescript
-// Change the startup screen from goLang() to a specific pre-selected state:
-async function start() {
-  if (launched) return;
-  launched = true;
-
-  // Pre-select Dutch / Staten Vertaling
-  cachedLangs = await apiFetch<Language[]>('/api/languages');
-  selLang = cachedLangs.find(l => l.code === 'NL') ?? null;
-  if (selLang) {
-    cachedBibles = await apiFetch<Bible[]>(`/api/bibles/${selLang.dir}`);
-    selBible = cachedBibles[0] ?? null;
-  }
-
-  // Then start at testament selection (or goLang() for the full picker)
-  if (selBible) return goTestament();
-  await goLang();
-}
-```
+To change the language or Bible from inside the app: double-click your way back to the relevant screen. Double-clicking on the app language screen returns to the splash screen.
 
 ---
 

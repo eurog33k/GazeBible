@@ -5,6 +5,20 @@ import {
   StartUpPageCreateResult,
 } from '@evenrealities/even_hub_sdk';
 import { UI, APP_LANG_NAMES, APP_LANG_ENGLISH_NAMES, APP_LANGS, type AppLang } from './i18n';
+import pkg from '../package.json';
+
+const APP_VERSION: string = (pkg as { version: string }).version;
+
+// Splash screen — title + version
+const _v = `v ${APP_VERSION}`;
+const SPLASH_LINES: string[] = [
+  '-----------',
+  'GazeBible',
+  _v,
+  '-----------',
+  '',
+  'click to start',
+];
 
 // For non-Latin scripts sort by English name, otherwise by native name.
 function langSortKey(lang: AppLang): string {
@@ -202,8 +216,9 @@ function bookName(num: number) { return s().books[num] ?? `Book ${num}`; }
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-type Screen = 'appLang' | 'lang' | 'bible' | 'testament' | 'book' | 'chapter' | 'reading' | 'license';
-let screen: Screen = 'appLang';
+type Screen = 'splash' | 'appLang' | 'lang' | 'bible' | 'testament' | 'book' | 'chapter' | 'reading' | 'license';
+let screen: Screen = 'splash';
+let splashContinue: (() => Promise<void>) | null = null;
 
 const PAGE_SIZE = 15;
 
@@ -241,6 +256,11 @@ function plain(items: string[]): string[] {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
+
+async function goSplash() {
+  screen = 'splash';
+  await showReading('', SPLASH_LINES);
+}
 
 async function goAppLang(isBack = false) {
   screen = 'appLang';
@@ -478,6 +498,7 @@ bridge.onEvenHubEvent(async (event) => {
     (d.currentselecteditemindex as number | undefined) ?? 0;
 
   if (type === 3) { // double-click = back
+    if (screen === 'appLang')   return goSplash();
     if (screen === 'lang')      return goAppLang(true);
     if (screen === 'bible')     return goLang(true);
     if (screen === 'testament') return goBible(true);
@@ -490,6 +511,11 @@ bridge.onEvenHubEvent(async (event) => {
 
   if (type === 1 || type === 2) return; // scroll — handled by list widget natively
   if (type !== 0) return;               // ignore anything else
+
+  if (screen === 'splash') {
+    if (splashContinue) return splashContinue();
+    return goAppLang();
+  }
 
   if (screen === 'appLang') {
     const pageStart   = appLangPage * PAGE_SIZE;
@@ -633,12 +659,14 @@ async function start() {
   if (savedPrefs) {
     selLang  = savedPrefs.lang;
     selBible = savedPrefs.bible;
-    return goTestament();
+    splashContinue = () => goTestament();
+  } else if (savedLang) {
+    splashContinue = () => goLang();
+  } else {
+    splashContinue = () => goAppLang();
   }
 
-  // No Bible selected yet: pick app language first (or skip straight to lang if already chosen)
-  if (!savedLang) return goAppLang();
-  await goLang();
+  await goSplash();
 }
 
 bridge.onLaunchSource(() => start());
