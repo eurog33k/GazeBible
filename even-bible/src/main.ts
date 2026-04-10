@@ -6,18 +6,17 @@ import {
 } from '@evenrealities/even_hub_sdk';
 import { UI, APP_LANG_NAMES, APP_LANG_ENGLISH_NAMES, APP_LANGS, type AppLang } from './i18n';
 import pkg from '../package.json';
+import licenseText from '../../LICENSE?raw';
 
 const APP_VERSION: string = (pkg as { version: string }).version;
-
-// Splash screen — title + version
 const _v = `v ${APP_VERSION}`;
-const SPLASH_LINES: string[] = [
+const GITHUB_URL = 'github.com/eurog33k/GazeBible';
+
+const SPLASH_HEADER = [
   '-----------',
   'GazeBible',
   _v,
   '-----------',
-  '',
-  'click to start',
 ];
 
 // For non-Latin scripts sort by English name, otherwise by native name.
@@ -216,7 +215,7 @@ function bookName(num: number) { return s().books[num] ?? `Book ${num}`; }
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-type Screen = 'splash' | 'appLang' | 'lang' | 'bible' | 'testament' | 'book' | 'chapter' | 'reading' | 'license';
+type Screen = 'splash' | 'appLang' | 'lang' | 'bible' | 'testament' | 'book' | 'chapter' | 'reading' | 'license' | 'appLicense';
 let screen: Screen = 'splash';
 let splashContinue: (() => Promise<void>) | null = null;
 
@@ -231,10 +230,12 @@ let appLangPage:  number         = 0;
 let langPage:     number         = 0;
 let bookPage:     number         = 0;
 let chapterPage:  number         = 0;
-let readingPage:  number         = 0;
-let licensePage:  number         = 0;
-let cachedLines:   string[] | null = null;
-let cachedLicense: string[] | null = null;
+let readingPage:     number         = 0;
+let licensePage:     number         = 0;
+let appLicensePage:  number         = 0;
+let cachedLines:      string[] | null = null;
+let cachedLicense:    string[] | null = null;
+let cachedAppLicense: string[] | null = null;
 
 let lastAppLangIdx = -1;
 let lastLangIdx    = -1;
@@ -259,7 +260,31 @@ function plain(items: string[]): string[] {
 
 async function goSplash() {
   screen = 'splash';
-  await showReading('', SPLASH_LINES);
+  appLicensePage = 0;
+  await showList('', [...SPLASH_HEADER, 'Start', 'Read license']);
+}
+
+async function goAppLicense() {
+  screen = 'appLicense';
+  if (!cachedAppLicense) {
+    const paras = licenseText.trim().split(/\n\n+/);
+    const lines: string[] = [GITHUB_URL, ''];
+    for (let i = 0; i < paras.length; i++) {
+      const text = paras[i].replace(/\n/g, ' ').trim();
+      lines.push(...wrapLines(text));
+      if (i < paras.length - 1) lines.push('');
+    }
+    cachedAppLicense = lines;
+  }
+  const allLines  = cachedAppLicense;
+  const pageStart = appLicensePage * PAGE_SIZE;
+  const pageEnd   = Math.min(pageStart + PAGE_SIZE, allLines.length);
+  const hasMore   = pageEnd < allLines.length;
+  const hasPrev   = appLicensePage > 0;
+  const pageLines = allLines.slice(pageStart, pageEnd);
+  if (hasPrev) pageLines.unshift(s().back);
+  if (hasMore) pageLines.push(s().more);
+  await showReading('License', pageLines);
 }
 
 async function goAppLang(isBack = false) {
@@ -272,8 +297,8 @@ async function goAppLang(isBack = false) {
   const hasPrev    = appLangPage > 0;
   const offset     = hasPrev ? 1 : 0;
   const labels     = pagelangs.map(c => langDisplayLabel(c));
-  if (hasPrev) labels.unshift('(back...)');
-  if (hasMore) labels.push('(more...)');
+  if (hasPrev) labels.unshift(s().back);
+  if (hasMore) labels.push(s().more);
   let items: string[];
   if (isBack && lastAppLangIdx >= 0) {
     const localIdx = lastAppLangIdx - pageStart + offset;
@@ -307,8 +332,8 @@ async function goLang(isBack = false) {
       const code = l.code.toLowerCase() as AppLang;
       return APP_LANG_NAMES[code] ? langDisplayLabel(code) : l.name;
     });
-    if (hasPrev) labels.unshift('(back...)');
-    if (hasMore) labels.push('(more...)');
+    if (hasPrev) labels.unshift(s().back);
+    if (hasMore) labels.push(s().more);
     let items: string[];
     if (isBack && lastLangIdx >= 0) {
       const localIdx = lastLangIdx - pageStart + offset;
@@ -364,8 +389,8 @@ async function goLicense() {
     const hasMore   = pageEnd < cachedLicense.length;
     const hasPrev   = licensePage > 0;
     const pageLines = cachedLicense.slice(pageStart, pageEnd);
-    if (hasPrev) pageLines.unshift('(back...)');
-    if (hasMore) pageLines.push('(more...)');
+    if (hasPrev) pageLines.unshift(s().back);
+    if (hasMore) pageLines.push(s().more);
     await showReading(s().license, pageLines);
   } catch (e) {
     cachedLicense = null;
@@ -397,8 +422,8 @@ async function goBook(isBack = false) {
     const hasPrev  = bookPage > 0;
     const offset   = hasPrev ? 1 : 0;
     const labels = pageBooks.map(b => bookName(b.book));
-    if (hasPrev) labels.unshift('(back...)');
-    if (hasMore) labels.push('(more...)');
+    if (hasPrev) labels.unshift(s().back);
+    if (hasMore) labels.push(s().more);
 
     let items: string[];
     if (isBack && lastBookIdx >= 0) {
@@ -430,8 +455,8 @@ async function goChapter(isBack = false) {
   const offset    = hasPrev ? 1 : 0;
   const pageCount = pageEnd - pageStart;
   const labels    = Array.from({ length: pageCount }, (_, i) => String(pageStart + i + 1));
-  if (hasPrev) labels.unshift('(back...)');
-  if (hasMore) labels.push('(more...)');
+  if (hasPrev) labels.unshift(s().back);
+  if (hasMore) labels.push(s().more);
   let items: string[];
   if (isBack && lastChapterIdx >= 0) {
     const localIdx = lastChapterIdx - pageStart + offset;
@@ -456,19 +481,40 @@ async function goReading() {
     }
     const allLines  = cachedLines.length ? cachedLines : ['(no verses)'];
     const pageStart = readingPage * PAGE_SIZE;
-    const pageEnd   = Math.min(pageStart + PAGE_SIZE, allLines.length);
+    const pageEnd   = readingPageEnd(allLines, readingPage);
     const hasMore   = pageEnd < allLines.length;
     const hasPrev   = readingPage > 0;
     const pageLines = allLines.slice(pageStart, pageEnd);
-    if (hasPrev) pageLines.unshift('(back...)');
-    if (hasMore) pageLines.push('(more...)');
+    if (hasPrev) pageLines.unshift(s().back);
+    if (hasMore) pageLines.push(s().more);
     await showReading(title, pageLines);
   } catch (e) {
     await showError(`${e}`);
   }
 }
 
-// ── Text wrapping ─────────────────────────────────────────────────────────────
+// ── Text wrapping & byte-safe pagination ──────────────────────────────────────
+
+// CJK characters are 3 bytes in UTF-8; keep page payload under this to avoid
+// rebuildPageContainer failures on Japanese / Korean / Chinese content.
+const READING_MAX_BYTES = 1100;
+const _enc = new TextEncoder();
+function byteLen(s: string): number { return _enc.encode(s).length; }
+
+// Returns the end index for a reading page, respecting both PAGE_SIZE and
+// the byte budget. Both goReading and the event handler must use this.
+function readingPageEnd(allLines: string[], page: number): number {
+  const start = page * PAGE_SIZE;
+  let end = start;
+  let bytes = 0;
+  while (end < allLines.length && end - start < PAGE_SIZE) {
+    const b = byteLen(allLines[end]);
+    if (bytes + b > READING_MAX_BYTES && end > start) break;
+    bytes += b;
+    end++;
+  }
+  return end;
+}
 
 function wrapLines(text: string, maxLen = 53): string[] {
   const words = text.split(' ');
@@ -498,14 +544,15 @@ bridge.onEvenHubEvent(async (event) => {
     (d.currentselecteditemindex as number | undefined) ?? 0;
 
   if (type === 3) { // double-click = back
-    if (screen === 'appLang')   return goSplash();
-    if (screen === 'lang')      return goAppLang(true);
-    if (screen === 'bible')     return goLang(true);
-    if (screen === 'testament') return goBible(true);
-    if (screen === 'book')      return goTestament(true);
-    if (screen === 'chapter')   return goBook(true);
-    if (screen === 'reading')   return goChapter(true);
-    if (screen === 'license')   return goTestament(true);
+    if (screen === 'appLang')    return goSplash();
+    if (screen === 'lang')       return goAppLang(true);
+    if (screen === 'bible')      return goLang(true);
+    if (screen === 'testament')  return goBible(true);
+    if (screen === 'book')       return goTestament(true);
+    if (screen === 'chapter')    return goBook(true);
+    if (screen === 'reading')    return goChapter(true);
+    if (screen === 'license')    return goTestament(true);
+    if (screen === 'appLicense') return goSplash();
     return;
   }
 
@@ -513,6 +560,9 @@ bridge.onEvenHubEvent(async (event) => {
   if (type !== 0) return;               // ignore anything else
 
   if (screen === 'splash') {
+    if (idx < SPLASH_HEADER.length) return; // decorative lines
+    if (idx === SPLASH_HEADER.length + 1) return goAppLicense();
+    // idx === SPLASH_HEADER.length → Start
     if (splashContinue) return splashContinue();
     return goAppLang();
   }
@@ -617,11 +667,10 @@ bridge.onEvenHubEvent(async (event) => {
   if (screen === 'reading') {
     if (!cachedLines) return;
     const allLines  = cachedLines.length ? cachedLines : ['(no verses)'];
-    const pageStart = readingPage * PAGE_SIZE;
-    const pageEnd   = Math.min(pageStart + PAGE_SIZE, allLines.length);
+    const pageEnd   = readingPageEnd(allLines, readingPage);
     const hasMore   = pageEnd < allLines.length;
     const hasPrev   = readingPage > 0;
-    const pageCount = pageEnd - pageStart;
+    const pageCount = pageEnd - readingPage * PAGE_SIZE;
     const offset    = hasPrev ? 1 : 0;
     if (hasPrev && idx === 0) { readingPage--; return goReading(); }
     if (hasMore && idx === pageCount + offset) { readingPage++; return goReading(); }
@@ -637,6 +686,19 @@ bridge.onEvenHubEvent(async (event) => {
     const offset    = hasPrev ? 1 : 0;
     if (hasPrev && idx === 0) { licensePage--; return goLicense(); }
     if (hasMore && idx === pageCount + offset) { licensePage++; return goLicense(); }
+  }
+
+  if (screen === 'appLicense') {
+    if (!cachedAppLicense) return;
+    const allLines  = cachedAppLicense;
+    const pageStart = appLicensePage * PAGE_SIZE;
+    const pageEnd   = Math.min(pageStart + PAGE_SIZE, allLines.length);
+    const hasMore   = pageEnd < allLines.length;
+    const hasPrev   = appLicensePage > 0;
+    const pageCount = pageEnd - pageStart;
+    const offset    = hasPrev ? 1 : 0;
+    if (hasPrev && idx === 0) { appLicensePage--; return goAppLicense(); }
+    if (hasMore && idx === pageCount + offset) { appLicensePage++; return goAppLicense(); }
   }
 });
 
