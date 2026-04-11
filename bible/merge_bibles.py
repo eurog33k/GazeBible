@@ -57,6 +57,7 @@ def create_schema(conn):
             shortname           TEXT,
             lang                TEXT,
             lang_short          TEXT,
+            lang_dir            TEXT,
             year                TEXT,
             copyright           TEXT,
             description         TEXT,
@@ -106,15 +107,20 @@ def import_db(dest_conn, db_path, lang_folder):
         src_conn.close()
         return 0
 
+    # Use the folder-derived name as fallback when meta doesn't supply lang
+    lang_from_folder = lang_folder.split("-", 1)[1] if "-" in lang_folder else lang_folder
+    lang_display = meta.get("lang") or lang_from_folder
+
     dest_conn.execute(
-        """INSERT INTO versions (module, name, shortname, lang, lang_short, year, copyright, description, copyright_statement)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO versions (module, name, shortname, lang, lang_short, lang_dir, year, copyright, description, copyright_statement)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             module,
             meta.get("name"),
             meta.get("shortname"),
-            meta.get("lang"),
+            lang_display,
             meta.get("lang_short"),
+            lang_folder,
             meta.get("year"),
             meta.get("copyright"),
             meta.get("description"),

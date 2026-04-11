@@ -356,7 +356,10 @@ async function goBible(isBack = false) {
       await showLoading();
       cachedBibles = await apiFetch<Bible[]>(`/api/bibles/${selLang.dir}`);
     }
-    const labels = cachedBibles.map(b => b.year ? `${b.name}  (${b.year})` : b.name);
+    const labels = cachedBibles.map(b => {
+      const raw = b.year ? `${b.name}  (${b.year})` : b.name;
+      return truncateLabel(raw);
+    });
     const items  = isBack && lastBibleIdx >= 0 ? withMarker(labels, lastBibleIdx) : plain(labels);
     await showList(selLang.name, items);
   } catch (e) {
@@ -514,6 +517,18 @@ function readingPageEnd(allLines: string[], page: number): number {
     end++;
   }
   return end;
+}
+
+// Truncate a list label so it fits the display (CJK chars are ~2× wider than ASCII).
+function truncateLabel(s: string, maxVisual = 50): string {
+  let w = 0;
+  for (let i = 0; i < s.length; ) {
+    const cp = s.codePointAt(i)!;
+    w += cp > 0x2E7F ? 2 : 1; // CJK / fullwidth = 2 columns, rest = 1
+    if (w > maxVisual) return s.slice(0, i) + '…';
+    i += cp > 0xFFFF ? 2 : 1; // surrogate pairs
+  }
+  return s;
 }
 
 function wrapLines(text: string, maxLen = 53): string[] {

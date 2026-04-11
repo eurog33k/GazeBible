@@ -4,10 +4,12 @@
 
 ```
 evenrealities/
-├── bible-backend/      Express API (reads SQLite files)
+├── bible-backend/      Express API (reads the combined SQLite)
 ├── even-bible/         Even Hub frontend (Vite + TypeScript)
 └── bible/
-    └── bibles_sqlite_6.0/   Bible database files
+    ├── bibles_combined.sqlite   Single database — all metadata + verses
+    ├── bibles_sqlite_6.0/       Source files (local dev/rebuild only)
+    └── merge_bibles.py          Merges source files into bibles_combined.sqlite
 ```
 
 ---
@@ -86,8 +88,9 @@ pm2 startup    # auto-start on reboot
 
 ## Production — cloud (e.g. a cheap VPS)
 
-1. Copy the `bible-backend/` folder and the `bible/bibles_sqlite_6.0/` folder to the server.
-2. Set the env var `BIBLES_DIR` to the path of the SQLite files on the server.
+1. Copy the `bible-backend/` folder and `bible/bibles_combined.sqlite` to the server.
+   (`bibles_sqlite_6.0/` is **not** needed on the server.)
+2. Set the env var `BIBLE_DB` to the absolute path of `bibles_combined.sqlite` on the server.
 3. Build the frontend with `VITE_API_URL=https://your-domain.com npm run build`.
 4. Serve with nginx + pm2, or use a single Express app that serves the static files.
 
@@ -125,5 +128,5 @@ To change the language or Bible from inside the app: double-click your way back 
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3001` | Backend port |
-| `BIBLES_DIR` | `../bible/bibles_sqlite_6.0` | Path to SQLite files |
+| `BIBLE_DB` | `../bible/bibles_combined.sqlite` | Path to the combined SQLite database |
 | `VITE_API_URL` | `''` (proxy) | Backend URL for prod builds |

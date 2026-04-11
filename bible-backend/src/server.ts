@@ -2,17 +2,18 @@ import express from 'express';
 import Database from 'better-sqlite3';
 import cors from 'cors';
 import path from 'path';
-import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = Number(process.env.PORT ?? 3001);
 
-// Path to the bibles directory — override with BIBLES_DIR env var
-const BIBLES_DIR =
-  process.env.BIBLES_DIR ??
-  path.join(__dirname, '../../bible/bibles_sqlite_6.0');
+// Single combined SQLite database — the only data source.
+const DB_PATH =
+  process.env.BIBLE_DB ??
+  path.join(__dirname, '../../bible/bibles_combined.sqlite');
+
+const db = new Database(DB_PATH, { readonly: true });
 
 app.use(cors());
 app.use(express.json());
@@ -28,20 +29,6 @@ app.use((req, res, next) => {
   });
   next();
 });
-
-// ── DB cache ──────────────────────────────────────────────────────────────────
-
-const dbCache = new Map<string, Database.Database>();
-
-function getDb(langDir: string, bibleFile: string): Database.Database {
-  const key = `${langDir}/${bibleFile}`;
-  if (!dbCache.has(key)) {
-    const filePath = path.join(BIBLES_DIR, langDir, `${bibleFile}.sqlite`);
-    if (!fs.existsSync(filePath)) throw new Error(`Bible not found: ${filePath}`);
-    dbCache.set(key, new Database(filePath, { readonly: true }));
-  }
-  return dbCache.get(key)!;
-}
 
 // ── Book name mapping (standard English names, 1-66) ─────────────────────────
 
@@ -81,15 +68,11 @@ function wrapText(text: string, maxLen: number): string[] {
 
 function cleanDescription(html: string): string[] {
   let text = html.replace(/\r\n?/g, '\n');
-  // Block elements → newline
   text = text.replace(/<br\s*\/?>/gi, '\n');
   text = text.replace(/<\/(?:p|div|h[1-6]|li|tr|td|th|blockquote|pre)>/gi, '\n');
   text = text.replace(/<(?:p|div|h[1-6]|blockquote|pre|ul|ol|tr)[^>]*>/gi, '\n');
-  // List items → bullet
   text = text.replace(/<li[^>]*>/gi, '\n• ');
-  // Strip remaining tags
   text = text.replace(/<[^>]+>/g, '');
-  // Decode entities
   text = text
     .replace(/&amp;/gi,    '&')
     .replace(/&lt;/gi,     '<')
@@ -110,9 +93,7 @@ function cleanDescription(html: string): string[] {
     .replace(/&oslash;/g,  'ø')
     .replace(/&#(\d+);/g,  (_, n) => String.fromCharCode(Number(n)))
     .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
-  // Split, trim each line
   const rawLines = text.split('\n').map(l => l.trim());
-  // Collapse consecutive blank lines
   const collapsed: string[] = [];
   let prevBlank = false;
   for (const line of rawLines) {
@@ -121,10 +102,8 @@ function cleanDescription(html: string): string[] {
     collapsed.push(line);
     prevBlank = blank;
   }
-  // Strip leading/trailing blanks
   while (collapsed.length > 0 && collapsed[0] === '') collapsed.shift();
   while (collapsed.length > 0 && collapsed[collapsed.length - 1] === '') collapsed.pop();
-  // Word-wrap at 53 chars
   const result: string[] = [];
   for (const line of collapsed) {
     if (line === '') { result.push(''); continue; }
@@ -135,13 +114,19 @@ function cleanDescription(html: string): string[] {
 
 function cleanText(text: string): string {
   return text
-    .replace(/¶\s*/g, '')              // paragraph marks
-    .replace(/[‹›«»]/g, '')            // decorative angle quotes
-    .replace(/\{[^}]*\}/g, '')         // Strong's numbers: {H1234} {(H8804)}
-    .replace(/\([a-zA-Z]\)/g, '')      // editorial markers: (b) (a)
-    .replace(/<[^>]+>/g, '')           // HTML tags
-    .replace(/\s{2,}/g, ' ')           // extra whitespace
+    .replace(/¶\s*/g, '')
+    .replace(/[‹›«»]/g, '')
+    .replace(/\{[^}]*\}/g, '')
+    .replace(/\([a-zA-Z]\)/g, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+// Derive a human-readable language name from a lang_dir value such as
+// "JA-Japanese" → "Japanese", "HT-Haitian,_Haitian_Creole" → "Haitian, Haitian Creole"
+function langNameFromDir(langDir: string): string {
+  return langDir.split('-').slice(1).join(' ').replace(/_/g, ' ');
 }
 
 // ── /api/log (frontend debug) ─────────────────────────────────────────────────
@@ -155,19 +140,15 @@ app.post('/api/log', (req, res) => {
 // ── /api/languages ────────────────────────────────────────────────────────────
 
 app.get('/api/languages', (_req, res) => {
-  const dirs = fs.readdirSync(BIBLES_DIR).filter(d => {
-    const full = path.join(BIBLES_DIR, d);
-    return fs.statSync(full).isDirectory() && d !== 'readme.txt';
-  });
+  const rows = db.prepare(
+    'SELECT DISTINCT lang_short, lang_dir FROM versions ORDER BY lang_dir'
+  ).all() as { lang_short: string; lang_dir: string }[];
 
-  const languages = dirs.map(dir => {
-    const [code, ...nameParts] = dir.split('-');
-    return {
-      code,
-      name: nameParts.join('-').replace(/_/g, ', '),
-      dir,
-    };
-  }).sort((a, b) => a.name.localeCompare(b.name));
+  const languages = rows.map(r => ({
+    code: r.lang_short.toUpperCase(),
+    name: langNameFromDir(r.lang_dir),
+    dir:  r.lang_dir,
+  }));
 
   res.json(languages);
 });
@@ -176,46 +157,42 @@ app.get('/api/languages', (_req, res) => {
 
 app.get('/api/bibles/:langDir', (req, res) => {
   const { langDir } = req.params;
-  const langPath = path.join(BIBLES_DIR, langDir);
+  const rows = db.prepare(
+    'SELECT module, name, shortname, year FROM versions WHERE lang_dir = ? ORDER BY name'
+  ).all(langDir) as { module: string; name: string; shortname: string; year: string }[];
 
-  if (!fs.existsSync(langPath)) return void res.status(404).json({ error: 'Language not found' });
+  if (rows.length === 0) return void res.status(404).json({ error: 'Language not found' });
 
-  const files = fs.readdirSync(langPath)
-    .filter(f => f.endsWith('.sqlite'));
-  const bibles = files.map(file => {
-    const bibleFile = file.replace('.sqlite', '');
-    try {
-      const db = getDb(langDir, bibleFile);
-      const meta = db.prepare('SELECT field, value FROM meta WHERE field IN (\'name\',\'shortname\',\'year\')').all() as { field: string; value: string }[];
-      const m: Record<string, string> = {};
-      for (const row of meta) m[row.field] = row.value;
-      return { file: bibleFile, name: m.name ?? bibleFile, shortname: m.shortname ?? bibleFile.toUpperCase(), year: m.year ?? '' };
-    } catch {
-      return { file: bibleFile, name: bibleFile, shortname: bibleFile.toUpperCase(), year: '' };
-    }
-  }).sort((a, b) => a.name.localeCompare(b.name));
-
-  res.json(bibles);
+  res.json(rows.map(r => ({
+    file:      r.module,
+    name:      r.name      ?? r.module,
+    shortname: r.shortname ?? r.module.toUpperCase(),
+    year:      r.year      ?? '',
+  })));
 });
 
 // ── /api/books/:langDir/:bibleFile ────────────────────────────────────────────
 
 app.get('/api/books/:langDir/:bibleFile', (req, res) => {
-  const { langDir, bibleFile } = req.params;
+  const { bibleFile } = req.params;
   try {
-    const db = getDb(langDir, bibleFile);
-    const rows = db.prepare(
-      'SELECT book, MAX(chapter) as chapters FROM verses GROUP BY book ORDER BY book'
-    ).all() as { book: number; chapters: number }[];
+    const rows = db.prepare(`
+      SELECT ve.book, MAX(ve.chapter) AS chapters
+      FROM verses ve
+      JOIN versions v ON v.id = ve.version_id
+      WHERE v.module = ?
+      GROUP BY ve.book
+      ORDER BY ve.book
+    `).all(bibleFile) as { book: number; chapters: number }[];
 
-    const books = rows.map(r => ({
-      book: r.book,
-      name: BOOK_NAMES[r.book] ?? `Book ${r.book}`,
-      chapters: r.chapters,
+    if (rows.length === 0) return void res.status(404).json({ error: 'Bible not found' });
+
+    res.json(rows.map(r => ({
+      book:      r.book,
+      name:      BOOK_NAMES[r.book] ?? `Book ${r.book}`,
+      chapters:  r.chapters,
       testament: r.book <= 39 ? 'OT' : 'NT',
-    }));
-
-    res.json(books);
+    })));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -224,17 +201,20 @@ app.get('/api/books/:langDir/:bibleFile', (req, res) => {
 // ── /api/verses/:langDir/:bibleFile/:book/:chapter ────────────────────────────
 
 app.get('/api/verses/:langDir/:bibleFile/:book/:chapter', (req, res) => {
-  const { langDir, bibleFile } = req.params;
-  const book = Number(req.params.book);
+  const { bibleFile } = req.params;
+  const book    = Number(req.params.book);
   const chapter = Number(req.params.chapter);
 
   if (isNaN(book) || isNaN(chapter)) return void res.status(400).json({ error: 'Invalid book/chapter' });
 
   try {
-    const db = getDb(langDir, bibleFile);
-    const rows = db.prepare(
-      'SELECT verse, text FROM verses WHERE book = ? AND chapter = ? ORDER BY verse'
-    ).all(book, chapter) as { verse: number; text: string }[];
+    const rows = db.prepare(`
+      SELECT ve.verse, ve.text
+      FROM verses ve
+      JOIN versions v ON v.id = ve.version_id
+      WHERE v.module = ? AND ve.book = ? AND ve.chapter = ?
+      ORDER BY ve.verse
+    `).all(bibleFile, book, chapter) as { verse: number; text: string }[];
 
     res.json(rows.map(r => ({ verse: r.verse, text: cleanText(r.text) })));
   } catch (e) {
@@ -245,23 +225,22 @@ app.get('/api/verses/:langDir/:bibleFile/:book/:chapter', (req, res) => {
 // ── /api/license/:langDir/:bibleFile ─────────────────────────────────────────
 
 app.get('/api/license/:langDir/:bibleFile', (req, res) => {
-  const { langDir, bibleFile } = req.params;
+  const { bibleFile } = req.params;
   try {
-    const db = getDb(langDir, bibleFile);
-    const rows = db.prepare(
-      "SELECT field, value FROM meta WHERE field IN ('description', 'copyright_statement')"
-    ).all() as { field: string; value: string }[];
-    const meta: Record<string, string> = {};
-    for (const r of rows) meta[r.field] = r.value?.trim() ?? '';
+    const row = db.prepare(
+      'SELECT description, copyright_statement FROM versions WHERE module = ?'
+    ).get(bibleFile) as { description: string; copyright_statement: string } | undefined;
+
+    if (!row) return void res.json({ lines: ['(no license information)'] });
 
     const lines: string[] = [];
 
-    if (meta['copyright_statement']) {
-      lines.push(...wrapText(meta['copyright_statement'], 53));
+    if (row.copyright_statement) {
+      lines.push(...wrapText(row.copyright_statement.trim(), 53));
     }
 
-    if (meta['description']) {
-      const descLines = cleanDescription(meta['description']);
+    if (row.description) {
+      const descLines = cleanDescription(row.description);
       if (descLines.length > 0) {
         if (lines.length > 0) lines.push('');
         lines.push(...descLines);
@@ -279,5 +258,5 @@ app.get('/api/license/:langDir/:bibleFile', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Bible API running on http://localhost:${PORT}`);
-  console.log(`Bibles directory: ${BIBLES_DIR}`);
+  console.log(`Database: ${DB_PATH}`);
 });
