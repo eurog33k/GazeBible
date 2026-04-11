@@ -2,30 +2,34 @@ import {
   waitForEvenAppBridge,
   CreateStartUpPageContainer, RebuildPageContainer,
   TextContainerProperty, ListContainerProperty, ListItemContainerProperty,
-  StartUpPageCreateResult,
+  ImageContainerProperty, ImageRawDataUpdate,
+  StartUpPageCreateResult, OsEventTypeList,
 } from '@evenrealities/even_hub_sdk';
 import { UI, APP_LANG_NAMES, APP_LANG_ENGLISH_NAMES, APP_LANGS, type AppLang } from './i18n';
 import pkg from '../package.json';
 import licenseText from '../../LICENSE?raw';
+import splashImgUrl from './splash.png';
 
 const APP_VERSION: string = (pkg as { version: string }).version;
 const _v = `v ${APP_VERSION}`;
 const GITHUB_URL = 'github.com/eurog33k/GazeBible';
 
-const SPLASH_HEADER = [
-  '-----------',
-  'GazeBible',
-  _v,
-  '-----------',
+// Attribution required by the splash icon license (CC BY 4.0).
+const ICON_ATTRIBUTION_LINES = [
+  '',
+  '── Splash icon ──────────────────────────',
+  '"Open" icon by IconScout',
+  'License: Creative Commons Attribution 4.0',
+  'creativecommons.org/licenses/by/4.0',
+  'iconscout.com/free-icon/',
+  'free-open-icon_444878',
 ];
 
-// For non-Latin scripts sort by English name, otherwise by native name.
 function langSortKey(lang: AppLang): string {
   const native = APP_LANG_NAMES[lang];
   return /[^\u0000-\u024F]/.test(native) ? APP_LANG_ENGLISH_NAMES[lang] : native;
 }
 
-// Display as "Native (English)" — omit suffix when the two names are identical.
 function langDisplayLabel(lang: AppLang): string {
   const native  = APP_LANG_NAMES[lang];
   const english = APP_LANG_ENGLISH_NAMES[lang];
@@ -38,12 +42,11 @@ const SORTED_APP_LANGS = [
     langSortKey(a).localeCompare(langSortKey(b))),
 ];
 
-// ── SDK bridge (resolved before any other code runs) ─────────────────────────
+// ── SDK bridge ────────────────────────────────────────────────────────────────
 
 const bridge = await waitForEvenAppBridge();
 let sdkReady = false;
 
-// Signal that the bridge resolved — visible in backend terminal via /api/log
 fetch('/api/log', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -52,8 +55,6 @@ fetch('/api/log', {
 
 // ── API ───────────────────────────────────────────────────────────────────────
 
-// In dev: Vite middleware plugin proxies /api → localhost:3001.
-// In prod: set VITE_API_URL to the full backend URL, e.g. http://192.168.1.42:3001
 const API = import.meta.env.DEV
   ? ''
   : ((import.meta.env.VITE_API_URL as string | undefined) ?? '');
@@ -70,7 +71,7 @@ function dbg(msg: string, level: 'log' | 'warn' | 'error' = 'log') {
 async function apiFetch<T>(path: string, attempt = 0): Promise<T> {
   const url = `${API}${path}`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000); // 10 s timeout
+  const timer = setTimeout(() => controller.abort(), 10_000);
   const t0 = Date.now();
   dbg(`[fetch] → ${url}${attempt > 0 ? ` (attempt ${attempt + 1})` : ''}`);
   try {
@@ -103,7 +104,7 @@ interface Bible     { file: string; name: string; shortname: string; year: strin
 interface BookInfo  { book: number; name: string; chapters: number; testament: 'OT' | 'NT' }
 interface Verse     { verse: number; text: string }
 
-// ── Persistence — uses bridge storage (survives app restarts) ─────────────────
+// ── Persistence ───────────────────────────────────────────────────────────────
 
 interface Prefs { lang: Language; bible: Bible }
 
@@ -131,27 +132,50 @@ async function loadPrefs(): Promise<Prefs | null> {
 
 // ── Render primitives ─────────────────────────────────────────────────────────
 
-
+// List-based screen (navigation): title text + selectable list container.
 function makeListSpec(
   titleName: string, title: string, listName: string,
   items: string[], selectable: boolean, padding: number,
 ): CreateStartUpPageContainer {
+  const safeTitle = sanitizeLabel(title);
+  const safeItems = items.map(sanitizeLabel);
   return new CreateStartUpPageContainer({
     containerTotalNum: 2,
     textObject: [new TextContainerProperty({
       containerID: 1, containerName: titleName,
       xPosition: 0, yPosition: 2, width: 576, height: 32,
-      content: title, isEventCapture: 0,
+      content: safeTitle, isEventCapture: 0,
     })],
     listObject: [new ListContainerProperty({
       containerID: 2, containerName: listName,
       xPosition: 0, yPosition: 36, width: 576, height: 242,
       borderWidth: 0, paddingLength: padding, isEventCapture: 1,
       itemContainer: new ListItemContainerProperty({
-        itemCount: items.length, itemWidth: 570,
-        isItemSelectBorderEn: selectable ? 1 : 0, itemName: items,
+        itemCount: safeItems.length, itemWidth: 570,
+        isItemSelectBorderEn: selectable ? 1 : 0, itemName: safeItems,
       }),
     })],
+  });
+}
+
+// Text-based reading screen: two TextContainerProperty containers.
+// isEventCapture: 1 on the content container enables textEvent scroll events
+// whenever the content overflows the container height (242 px).
+function makeTextReadSpec(title: string, content: string): CreateStartUpPageContainer {
+  return new CreateStartUpPageContainer({
+    containerTotalNum: 2,
+    textObject: [
+      new TextContainerProperty({
+        containerID: 1, containerName: 'rtl',
+        xPosition: 0, yPosition: 2, width: 576, height: 30,
+        content: sanitizeLabel(title), isEventCapture: 0,
+      }),
+      new TextContainerProperty({
+        containerID: 2, containerName: 'rcnt',
+        xPosition: 0, yPosition: 36, width: 576, height: 242,
+        content: sanitizeLabel(content), isEventCapture: 1,
+      }),
+    ],
   });
 }
 
@@ -160,8 +184,9 @@ async function doRebuild(spec: CreateStartUpPageContainer) {
   dbg(`[render] rebuildPageContainer items=${n}`);
   const ok = await bridge.rebuildPageContainer(new RebuildPageContainer({
     containerTotalNum: spec.containerTotalNum,
-    textObject: spec.textObject,
-    listObject: spec.listObject,
+    textObject:  spec.textObject,
+    listObject:  spec.listObject,
+    imageObject: spec.imageObject,
   }));
   dbg(`[render] rebuildPageContainer ok=${ok}`);
   if (!ok) dbg(`[render] rebuildPageContainer failed (${n} items)`, 'warn');
@@ -175,7 +200,6 @@ async function renderContainer(spec: CreateStartUpPageContainer) {
     if (result === StartUpPageCreateResult.success) {
       sdkReady = true;
     } else if (result === StartUpPageCreateResult.invalid) {
-      // Container still alive from previous session — go straight to rebuild
       dbg('[render] container exists from previous session, using rebuildPageContainer', 'warn');
       sdkReady = true;
       await doRebuild(spec);
@@ -191,19 +215,16 @@ async function showList(title: string, items: string[]) {
   await renderContainer(makeListSpec('ttl', title, 'lst', items, true, 2));
 }
 
-async function showReading(title: string, items: string[]) {
-  await renderContainer(makeListSpec('rtl', title, 'rlst', items, false, 1));
+async function showTextReading(title: string, content: string) {
+  await renderContainer(makeTextReadSpec(title, content));
 }
 
-// Loading shows text in list body (not just title) so screen is never blank
 async function showLoading(msg?: string) {
   const text = msg ?? s().loading;
   await showList(text, [text]);
 }
 
-// Error shows in list body; double-click goes back
 async function showError(msg: string) {
-  // Trim to avoid any SDK length issues
   await showList('!', [msg.slice(0, 48), '', '< double-click to go back']);
 }
 
@@ -219,7 +240,7 @@ type Screen = 'splash' | 'appLang' | 'lang' | 'bible' | 'testament' | 'book' | '
 let screen: Screen = 'splash';
 let splashContinue: (() => Promise<void>) | null = null;
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 13; // effective items per nav page (leaves room for back/more items)
 
 let selLang:      Language | null = null;
 let selBible:     Bible    | null = null;
@@ -230,9 +251,15 @@ let appLangPage:  number         = 0;
 let langPage:     number         = 0;
 let bookPage:     number         = 0;
 let chapterPage:  number         = 0;
-let readingPage:     number         = 0;
-let licensePage:     number         = 0;
-let appLicensePage:  number         = 0;
+let readingPage:  number         = 0;
+let licensePage:  number         = 0;
+let appLicensePage: number       = 0;
+
+// Actual start-line index for each text-reading page (lazily computed, reset on cache clear).
+let readingPageStarts:    number[] = [];
+let licensePageStarts:    number[] = [];
+let appLicensePageStarts: number[] = [];
+
 let cachedLines:      string[] | null = null;
 let cachedLicense:    string[] | null = null;
 let cachedAppLicense: string[] | null = null;
@@ -247,13 +274,143 @@ let cachedLangs:  Language[] | null = null;
 let cachedBibles: Bible[]    | null = null;
 let cachedBooks:  BookInfo[] | null = null;
 
+let _splashImg: Uint8Array | null = null;
+async function loadSplashImg(): Promise<Uint8Array> {
+  if (!_splashImg) {
+    const resp = await fetch(splashImgUrl as string);
+    _splashImg = new Uint8Array(await resp.arrayBuffer());
+  }
+  return _splashImg;
+}
+
+// ── Text-page pagination (for text containers) ────────────────────────────────
+
+// Keep each page well under the 1000-char createStartUpPageContainer limit.
+// Show enough lines to overflow the 242-px content container so the firmware
+// enables internal scrolling and emits boundary textEvents at top / bottom.
+const TEXT_PAGE_CHARS    = 900; // char budget per page
+const TEXT_PAGE_MAX_LINES = 25; // hard upper bound (25 × ~10px = 250px > 242px)
+
+function computeTextPageEnd(lines: string[], start: number): number {
+  let end = start, chars = 0;
+  while (end < lines.length && end - start < TEXT_PAGE_MAX_LINES) {
+    const c = lines[end].length + 1; // +1 for the joining '\n'
+    if (chars + c > TEXT_PAGE_CHARS && end > start) break;
+    chars += c;
+    end++;
+  }
+  return end;
+}
+
+// Lazily build the page-start index table for a given content array.
+// Mutates the `starts` array (passed by reference) — caller owns it.
+function ensurePageStart(starts: number[], page: number, lines: string[]): number {
+  if (starts.length === 0) starts.push(0);
+  while (starts.length <= page) {
+    starts.push(computeTextPageEnd(lines, starts[starts.length - 1]));
+  }
+  return starts[page];
+}
+
+function buildTextPage(starts: number[], page: number, lines: string[]): string {
+  const start = ensurePageStart(starts, page, lines);
+  const end   = computeTextPageEnd(lines, start);
+  return lines.slice(start, end).join('\n') || '(no content)';
+}
+
+function textPageHasNext(starts: number[], page: number, lines: string[]): boolean {
+  return ensurePageStart(starts, page + 1, lines) < lines.length;
+}
+
+// ── Display sanitizer ─────────────────────────────────────────────────────────
+// The Even G2 font covers Basic Latin, Latin-1 Supplement, Latin Extended-A,
+// Cyrillic, and CJK. Latin Extended-B / IPA Extensions are NOT in the font —
+// those code points produce blank glyphs (LVGL warning U+199, U+257, etc.).
+// This function maps known problematic chars to ASCII equivalents, then uses
+// NFD decomposition + combining-mark removal to handle the rest (Vietnamese, etc.).
+
+const GLYPH_APPROX: Record<string, string> = {
+  // Latin Extended-B stand-alone letters (no NFD decomposition)
+  'ƀ':'b','Ƀ':'B','ƃ':'b','Ƃ':'B','ɓ':'b','Ɓ':'B',
+  'ƌ':'d','Ƌ':'D','ɗ':'d','Ɗ':'D',
+  'ɛ':'e','Ɛ':'E',
+  'ƒ':'f','Ƒ':'F',
+  'ɠ':'g','Ɠ':'G',
+  'ɦ':'h',
+  'ƕ':'hv',
+  'ɩ':'i','ɪ':'i',
+  'ƙ':'k','Ƙ':'K',
+  'ɬ':'l','ɭ':'l',
+  'ɱ':'m',
+  'ɲ':'n','ɳ':'n','ƞ':'n','Ƞ':'N',
+  'ɔ':'o','Ɔ':'O','ɵ':'o','Ɵ':'O',
+  'ʀ':'r',
+  'ƨ':'s','ʃ':'s',
+  'ƫ':'t','ʈ':'t',
+  'ʉ':'u','ʊ':'u',
+  'ʋ':'v','ʌ':'v',
+  'ƿ':'w','Ƿ':'W',
+  'ʒ':'z',
+  // Symbols that add no readable meaning on the display
+  '™':'','®':'','©':'',
+};
+
+function sanitizeLabel(text: string): string {
+  // 1. Replace known stand-alone glyphs that can't render
+  let s = text;
+  for (const [from, to] of Object.entries(GLYPH_APPROX)) {
+    if (s.includes(from)) s = s.split(from).join(to);
+  }
+  // 2. NFD + strip combining marks — handles Vietnamese and other accented chars
+  //    that decompose to base + diacritic (e.g. ậ → a + ̣ + ̂ → a)
+  return s.normalize('NFD').replace(/\p{Mn}/gu, '');
+}
+
+// ── Text wrapping & label helpers ─────────────────────────────────────────────
+
+function truncateLabel(s: string, maxVisual = 50): string {
+  let w = 0;
+  for (let i = 0; i < s.length; ) {
+    const cp = s.codePointAt(i)!;
+    w += cp > 0x2E7F ? 2 : 1;
+    if (w > maxVisual) return s.slice(0, i) + '…';
+    i += cp > 0xFFFF ? 2 : 1;
+  }
+  return s;
+}
+
+function wrapLines(text: string, maxLen = 53): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    if (!cur) { cur = w; continue; }
+    if ((cur + ' ' + w).length <= maxLen) { cur += ' ' + w; }
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
 // ── Marker helper ─────────────────────────────────────────────────────────────
 
 function withMarker(items: string[], idx: number): string[] {
   return items.map((l, i) => i === idx ? `> ${l}` : `  ${l}`);
 }
-function plain(items: string[]): string[] {
-  return items;
+function plain(items: string[]): string[] { return items; }
+
+// ── Navigation helper: build list items with optional back/more pagination ────
+
+function pagedItems(
+  labels: string[], hasPrev: boolean, hasMore: boolean,
+  markerLocalIdx = -1,
+): string[] {
+  const marked = markerLocalIdx >= 0 ? withMarker(labels, markerLocalIdx) : plain(labels);
+  return [
+    ...(hasPrev ? [s().back]  : []),
+    ...marked,
+    ...(hasMore ? [s().more]  : []),
+  ];
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -261,7 +418,37 @@ function plain(items: string[]): string[] {
 async function goSplash() {
   screen = 'splash';
   appLicensePage = 0;
-  await showList('', [...SPLASH_HEADER, 'Start', 'Read license']);
+  appLicensePageStarts = [];
+
+  const spec = new CreateStartUpPageContainer({
+    containerTotalNum: 3,
+    imageObject: [new ImageContainerProperty({
+      containerID: 1, containerName: 'spl-img',
+      xPosition: 0, yPosition: 72, width: 270, height: 136,
+    })],
+    textObject: [new TextContainerProperty({
+      containerID: 2, containerName: 'spl-ttl',
+      xPosition: 282, yPosition: 40, width: 288, height: 52,
+      content: `GazeBible\n${_v}`, isEventCapture: 0,
+    })],
+    listObject: [new ListContainerProperty({
+      containerID: 3, containerName: 'spl-lst',
+      xPosition: 282, yPosition: 100, width: 288, height: 90,
+      borderWidth: 0, paddingLength: 2, isEventCapture: 1,
+      itemContainer: new ListItemContainerProperty({
+        itemCount: 2, itemWidth: 282,
+        isItemSelectBorderEn: 1, itemName: ['Start', 'Read license'],
+      }),
+    })],
+  });
+
+  await renderContainer(spec);
+
+  const imgData = await loadSplashImg();
+  const imgResult = await bridge.updateImageRawData(new ImageRawDataUpdate({
+    containerID: 1, containerName: 'spl-img', imageData: imgData,
+  }));
+  dbg(`[splash] updateImageRawData result=${imgResult}`);
 }
 
 async function goAppLicense() {
@@ -274,39 +461,29 @@ async function goAppLicense() {
       lines.push(...wrapLines(text));
       if (i < paras.length - 1) lines.push('');
     }
+    lines.push(...ICON_ATTRIBUTION_LINES);
     cachedAppLicense = lines;
+    appLicensePageStarts = [];
   }
-  const allLines  = cachedAppLicense;
-  const pageStart = appLicensePage * PAGE_SIZE;
-  const pageEnd   = Math.min(pageStart + PAGE_SIZE, allLines.length);
-  const hasMore   = pageEnd < allLines.length;
-  const hasPrev   = appLicensePage > 0;
-  const pageLines = allLines.slice(pageStart, pageEnd);
-  if (hasPrev) pageLines.unshift(s().back);
-  if (hasMore) pageLines.push(s().more);
-  await showReading('License', pageLines);
+  const content = buildTextPage(appLicensePageStarts, appLicensePage, cachedAppLicense);
+  await showTextReading('License', content);
 }
 
 async function goAppLang(isBack = false) {
   screen = 'appLang';
   if (isBack && lastAppLangIdx >= 0) appLangPage = Math.floor(lastAppLangIdx / PAGE_SIZE);
-  const pageStart  = appLangPage * PAGE_SIZE;
-  const pageEnd    = Math.min(pageStart + PAGE_SIZE, SORTED_APP_LANGS.length);
-  const pagelangs  = SORTED_APP_LANGS.slice(pageStart, pageEnd);
-  const hasMore    = pageEnd < SORTED_APP_LANGS.length;
-  const hasPrev    = appLangPage > 0;
-  const offset     = hasPrev ? 1 : 0;
-  const labels     = pagelangs.map(c => langDisplayLabel(c));
-  if (hasPrev) labels.unshift(s().back);
-  if (hasMore) labels.push(s().more);
-  let items: string[];
+  const pageStart = appLangPage * PAGE_SIZE;
+  const pageEnd   = Math.min(pageStart + PAGE_SIZE, SORTED_APP_LANGS.length);
+  const pagelangs = SORTED_APP_LANGS.slice(pageStart, pageEnd);
+  const hasPrev   = appLangPage > 0;
+  const hasMore   = pageEnd < SORTED_APP_LANGS.length;
+  const labels    = pagelangs.map(c => langDisplayLabel(c));
+  let markerLocal = -1;
   if (isBack && lastAppLangIdx >= 0) {
-    const localIdx = lastAppLangIdx - pageStart + offset;
-    items = localIdx >= 0 && localIdx < pagelangs.length + offset ? withMarker(labels, localIdx) : plain(labels);
-  } else {
-    items = plain(labels);
+    markerLocal = lastAppLangIdx - pageStart;
+    if (markerLocal < 0 || markerLocal >= pagelangs.length) markerLocal = -1;
   }
-  await showList('Language', items);
+  await showList('Language', pagedItems(labels, hasPrev, hasMore, markerLocal));
 }
 
 async function goLang(isBack = false) {
@@ -325,23 +502,18 @@ async function goLang(isBack = false) {
     const pageStart = langPage * PAGE_SIZE;
     const pageEnd   = Math.min(pageStart + PAGE_SIZE, cachedLangs.length);
     const pageLangs = cachedLangs.slice(pageStart, pageEnd);
-    const hasMore   = pageEnd < cachedLangs.length;
     const hasPrev   = langPage > 0;
-    const offset    = hasPrev ? 1 : 0;
+    const hasMore   = pageEnd < cachedLangs.length;
     const labels    = pageLangs.map(l => {
       const code = l.code.toLowerCase() as AppLang;
       return APP_LANG_NAMES[code] ? langDisplayLabel(code) : l.name;
     });
-    if (hasPrev) labels.unshift(s().back);
-    if (hasMore) labels.push(s().more);
-    let items: string[];
+    let markerLocal = -1;
     if (isBack && lastLangIdx >= 0) {
-      const localIdx = lastLangIdx - pageStart + offset;
-      items = localIdx >= 0 && localIdx < pageLangs.length + offset ? withMarker(labels, localIdx) : plain(labels);
-    } else {
-      items = plain(labels);
+      markerLocal = lastLangIdx - pageStart;
+      if (markerLocal < 0 || markerLocal >= pageLangs.length) markerLocal = -1;
     }
-    await showList(s().bibleLanguage, items);
+    await showList(s().bibleLanguage, pagedItems(labels, hasPrev, hasMore, markerLocal));
   } catch (e) {
     cachedLangs = null;
     await showError(`${e}`);
@@ -360,7 +532,7 @@ async function goBible(isBack = false) {
       const raw = b.year ? `${b.name}  (${b.year})` : b.name;
       return truncateLabel(raw);
     });
-    const items  = isBack && lastBibleIdx >= 0 ? withMarker(labels, lastBibleIdx) : plain(labels);
+    const items = isBack && lastBibleIdx >= 0 ? withMarker(labels, lastBibleIdx) : plain(labels);
     await showList(selLang.name, items);
   } catch (e) {
     cachedBibles = null;
@@ -386,15 +558,10 @@ async function goLicense() {
       await showLoading();
       const data = await apiFetch<{ lines: string[] }>(`/api/license/${selLang.dir}/${selBible.file}`);
       cachedLicense = data.lines.length ? data.lines : ['(no license information)'];
+      licensePageStarts = [];
     }
-    const pageStart = licensePage * PAGE_SIZE;
-    const pageEnd   = Math.min(pageStart + PAGE_SIZE, cachedLicense.length);
-    const hasMore   = pageEnd < cachedLicense.length;
-    const hasPrev   = licensePage > 0;
-    const pageLines = cachedLicense.slice(pageStart, pageEnd);
-    if (hasPrev) pageLines.unshift(s().back);
-    if (hasMore) pageLines.push(s().more);
-    await showReading(s().license, pageLines);
+    const content = buildTextPage(licensePageStarts, licensePage, cachedLicense);
+    await showTextReading(s().license, content);
   } catch (e) {
     cachedLicense = null;
     await showError(`${e}`);
@@ -413,31 +580,28 @@ async function goBook(isBack = false) {
       dbg(`[goBook] got ${cachedBooks.length} books`);
     }
     const filtered = cachedBooks.filter(b => b.testament === selTestament);
-
-    // Restore the correct page when going back
+    if (filtered.length === 0) {
+      const name = selTestament === 'OT' ? s().oldTestament : s().newTestament;
+      await showError(`${name}: no books`);
+      return;
+    }
     if (isBack && lastBookIdx >= 0) bookPage = Math.floor(lastBookIdx / PAGE_SIZE);
-
     const pageStart = bookPage * PAGE_SIZE;
     const pageEnd   = Math.min(pageStart + PAGE_SIZE, filtered.length);
     const pageBooks = filtered.slice(pageStart, pageEnd);
+    const hasPrev   = bookPage > 0;
     const hasMore   = pageEnd < filtered.length;
-
-    const hasPrev  = bookPage > 0;
-    const offset   = hasPrev ? 1 : 0;
-    const labels = pageBooks.map(b => bookName(b.book));
-    if (hasPrev) labels.unshift(s().back);
-    if (hasMore) labels.push(s().more);
-
-    let items: string[];
+    const labels    = pageBooks.map(b => bookName(b.book));
+    let markerLocal = -1;
     if (isBack && lastBookIdx >= 0) {
-      const localIdx = lastBookIdx - pageStart + offset;
-      items = localIdx >= 0 && localIdx < pageBooks.length + offset ? withMarker(labels, localIdx) : plain(labels);
-    } else {
-      items = plain(labels);
+      markerLocal = lastBookIdx - pageStart;
+      if (markerLocal < 0 || markerLocal >= pageBooks.length) markerLocal = -1;
     }
-
-    dbg(`[goBook] page=${bookPage} showing=${pageBooks.length}${hasMore ? '+more' : ''} items=${items.length}`);
-    await showList(selTestament === 'OT' ? s().oldTestament : s().newTestament, items);
+    dbg(`[goBook] page=${bookPage} showing=${pageBooks.length}`);
+    await showList(
+      selTestament === 'OT' ? s().oldTestament : s().newTestament,
+      pagedItems(labels, hasPrev, hasMore, markerLocal),
+    );
     dbg('[goBook] showList done');
   } catch (e) {
     dbg(`[goBook] ERROR: ${e}`, 'error');
@@ -453,21 +617,16 @@ async function goChapter(isBack = false) {
   const total     = selBook.chapters;
   const pageStart = chapterPage * PAGE_SIZE;
   const pageEnd   = Math.min(pageStart + PAGE_SIZE, total);
-  const hasMore   = pageEnd < total;
-  const hasPrev   = chapterPage > 0;
-  const offset    = hasPrev ? 1 : 0;
   const pageCount = pageEnd - pageStart;
+  const hasPrev   = chapterPage > 0;
+  const hasMore   = pageEnd < total;
   const labels    = Array.from({ length: pageCount }, (_, i) => String(pageStart + i + 1));
-  if (hasPrev) labels.unshift(s().back);
-  if (hasMore) labels.push(s().more);
-  let items: string[];
+  let markerLocal = -1;
   if (isBack && lastChapterIdx >= 0) {
-    const localIdx = lastChapterIdx - pageStart + offset;
-    items = localIdx >= 0 && localIdx < pageCount + offset ? withMarker(labels, localIdx) : plain(labels);
-  } else {
-    items = plain(labels);
+    markerLocal = lastChapterIdx - pageStart;
+    if (markerLocal < 0 || markerLocal >= pageCount) markerLocal = -1;
   }
-  await showList(bookName(selBook.book), items);
+  await showList(bookName(selBook.book), pagedItems(labels, hasPrev, hasMore, markerLocal));
 }
 
 async function goReading() {
@@ -481,84 +640,53 @@ async function goReading() {
         `/api/verses/${selLang.dir}/${selBible.file}/${selBook.book}/${selChapter}`
       );
       cachedLines = verses.flatMap(v => wrapLines(`${v.verse} ${v.text}`));
+      readingPageStarts = [];
     }
-    const allLines  = cachedLines.length ? cachedLines : ['(no verses)'];
-    const pageStart = readingPage * PAGE_SIZE;
-    const pageEnd   = readingPageEnd(allLines, readingPage);
-    const hasMore   = pageEnd < allLines.length;
-    const hasPrev   = readingPage > 0;
-    const pageLines = allLines.slice(pageStart, pageEnd);
-    if (hasPrev) pageLines.unshift(s().back);
-    if (hasMore) pageLines.push(s().more);
-    await showReading(title, pageLines);
+    const allLines = cachedLines.length ? cachedLines : ['(no verses)'];
+    const content  = buildTextPage(readingPageStarts, readingPage, allLines);
+    await showTextReading(title, content);
   } catch (e) {
     await showError(`${e}`);
   }
 }
 
-// ── Text wrapping & byte-safe pagination ──────────────────────────────────────
-
-// CJK characters are 3 bytes in UTF-8; keep page payload under this to avoid
-// rebuildPageContainer failures on Japanese / Korean / Chinese content.
-const READING_MAX_BYTES = 1100;
-const _enc = new TextEncoder();
-function byteLen(s: string): number { return _enc.encode(s).length; }
-
-// Returns the end index for a reading page, respecting both PAGE_SIZE and
-// the byte budget. Both goReading and the event handler must use this.
-function readingPageEnd(allLines: string[], page: number): number {
-  const start = page * PAGE_SIZE;
-  let end = start;
-  let bytes = 0;
-  while (end < allLines.length && end - start < PAGE_SIZE) {
-    const b = byteLen(allLines[end]);
-    if (bytes + b > READING_MAX_BYTES && end > start) break;
-    bytes += b;
-    end++;
-  }
-  return end;
-}
-
-// Truncate a list label so it fits the display (CJK chars are ~2× wider than ASCII).
-function truncateLabel(s: string, maxVisual = 50): string {
-  let w = 0;
-  for (let i = 0; i < s.length; ) {
-    const cp = s.codePointAt(i)!;
-    w += cp > 0x2E7F ? 2 : 1; // CJK / fullwidth = 2 columns, rest = 1
-    if (w > maxVisual) return s.slice(0, i) + '…';
-    i += cp > 0xFFFF ? 2 : 1; // surrogate pairs
-  }
-  return s;
-}
-
-function wrapLines(text: string, maxLen = 53): string[] {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    if (!cur) { cur = w; continue; }
-    if ((cur + ' ' + w).length <= maxLen) { cur += ' ' + w; }
-    else { lines.push(cur); cur = w; }
-  }
-  if (cur) lines.push(cur);
-  return lines;
-}
-
 // ── Events ────────────────────────────────────────────────────────────────────
 
 bridge.onEvenHubEvent(async (event) => {
-  const d: Record<string, unknown> =
-    (event.listEvent as Record<string, unknown> | undefined) ??
-    (event.jsonData  as Record<string, unknown> | undefined) ?? {};
-  if (Object.keys(d).length === 0) return;
+  // Unconditional raw log — fires for every event
+  dbg(`[ev] txt.et=${event.textEvent?.eventType ?? '-'} list.et=${event.listEvent?.eventType ?? '-'} list.idx=${event.listEvent?.currentSelectItemIndex ?? '-'} sys.et=${event.sysEvent?.eventType ?? '-'}`);
 
-  const type: number =
-    (d.eventType as number | undefined) ?? (d.eventtype as number | undefined) ?? 0;
-  const idx: number =
-    (d.currentSelectItemIndex  as number | undefined) ??
-    (d.currentselecteditemindex as number | undefined) ?? 0;
+  // ── Swipes → textEvent (fires for TextContainerProperty with isEventCapture:1) ──
+  if (event.textEvent) {
+    const et = event.textEvent.eventType;
+    dbg(`[event] textEvent et=${et} screen=${screen}`);
 
-  if (type === 3) { // double-click = back
+    if (et === OsEventTypeList.SCROLL_TOP_EVENT) {
+      if (screen === 'reading'    && readingPage > 0)     { readingPage--;    return goReading(); }
+      if (screen === 'license'    && licensePage > 0)     { licensePage--;    return goLicense(); }
+      if (screen === 'appLicense' && appLicensePage > 0)  { appLicensePage--; return goAppLicense(); }
+      return;
+    }
+
+    if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
+      if (screen === 'reading' && cachedLines) {
+        const allLines = cachedLines.length ? cachedLines : ['(no verses)'];
+        if (textPageHasNext(readingPageStarts, readingPage, allLines)) { readingPage++; return goReading(); }
+      }
+      if (screen === 'license' && cachedLicense) {
+        if (textPageHasNext(licensePageStarts, licensePage, cachedLicense)) { licensePage++; return goLicense(); }
+      }
+      if (screen === 'appLicense' && cachedAppLicense) {
+        if (textPageHasNext(appLicensePageStarts, appLicensePage, cachedAppLicense)) { appLicensePage++; return goAppLicense(); }
+      }
+      return;
+    }
+    return;
+  }
+
+  // ── Double-tap → sysEvent type 3 ─────────────────────────────────────────
+  if (event.sysEvent?.eventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+    dbg(`[event] double-tap screen=${screen}`);
     if (screen === 'appLang')    return goSplash();
     if (screen === 'lang')       return goAppLang(true);
     if (screen === 'bible')      return goLang(true);
@@ -571,27 +699,37 @@ bridge.onEvenHubEvent(async (event) => {
     return;
   }
 
-  if (type === 1 || type === 2) return; // scroll — handled by list widget natively
-  if (type !== 0) return;               // ignore anything else
+  // ── Single tap: list item index from listEvent, tap signal from sysEvent ──
+  // CLICK_EVENT = 0 is the protobuf default and arrives as undefined on the wire.
+  const listEt = event.listEvent?.eventType;
+  const sysEt  = event.sysEvent?.eventType;
+  const isClick = (t: OsEventTypeList | undefined) =>
+    t === undefined || t === OsEventTypeList.CLICK_EVENT;
+
+  if (!event.listEvent && !event.sysEvent) return;
+  if (!isClick(listEt) && !isClick(sysEt))  return;
+
+  const idx = event.listEvent?.currentSelectItemIndex ?? 0;
+  dbg(`[event] click idx=${idx} screen=${screen}`);
 
   if (screen === 'splash') {
-    if (idx < SPLASH_HEADER.length) return; // decorative lines
-    if (idx === SPLASH_HEADER.length + 1) return goAppLicense();
-    // idx === SPLASH_HEADER.length → Start
+    if (idx === 1) return goAppLicense();
     if (splashContinue) return splashContinue();
     return goAppLang();
   }
 
+  // ── Navigation screens — (back...) / (more...) handled by offset math ────
+
   if (screen === 'appLang') {
-    const pageStart   = appLangPage * PAGE_SIZE;
-    const pageEnd     = Math.min(pageStart + PAGE_SIZE, SORTED_APP_LANGS.length);
-    const pagelangs   = SORTED_APP_LANGS.slice(pageStart, pageEnd);
-    const hasMore     = pageEnd < SORTED_APP_LANGS.length;
-    const hasPrev     = appLangPage > 0;
-    const offset      = hasPrev ? 1 : 0;
-    if (hasPrev && idx === 0) { appLangPage--; return goAppLang(); }
-    if (hasMore && idx === pagelangs.length + offset) { appLangPage++; return goAppLang(); }
-    const realIdx = idx - offset;
+    const pageStart = appLangPage * PAGE_SIZE;
+    const pageEnd   = Math.min(pageStart + PAGE_SIZE, SORTED_APP_LANGS.length);
+    const hasPrev   = appLangPage > 0;
+    const hasMore   = pageEnd < SORTED_APP_LANGS.length;
+    const offset    = hasPrev ? 1 : 0;
+    if (hasPrev && idx === 0)                                { appLangPage--; return goAppLang(); }
+    if (hasMore && idx === offset + (pageEnd - pageStart))   { appLangPage++; return goAppLang(); }
+    const realIdx   = idx - offset;
+    const pagelangs = SORTED_APP_LANGS.slice(pageStart, pageEnd);
     if (realIdx < 0 || realIdx >= pagelangs.length) return;
     lastAppLangIdx = pageStart + realIdx;
     appLang        = pagelangs[realIdx];
@@ -606,13 +744,13 @@ bridge.onEvenHubEvent(async (event) => {
     if (!cachedLangs) return;
     const pageStart = langPage * PAGE_SIZE;
     const pageEnd   = Math.min(pageStart + PAGE_SIZE, cachedLangs.length);
-    const pageLangs = cachedLangs.slice(pageStart, pageEnd);
-    const hasMore   = pageEnd < cachedLangs.length;
     const hasPrev   = langPage > 0;
+    const hasMore   = pageEnd < cachedLangs.length;
     const offset    = hasPrev ? 1 : 0;
-    if (hasPrev && idx === 0) { langPage--; return goLang(); }
-    if (hasMore && idx === pageLangs.length + offset) { langPage++; return goLang(); }
-    const realIdx = idx - offset;
+    if (hasPrev && idx === 0)                               { langPage--; return goLang(); }
+    if (hasMore && idx === offset + (pageEnd - pageStart))  { langPage++; return goLang(); }
+    const realIdx   = idx - offset;
+    const pageLangs = cachedLangs.slice(pageStart, pageEnd);
     if (realIdx < 0 || realIdx >= pageLangs.length) return;
     lastLangIdx  = pageStart + realIdx;
     selLang      = pageLangs[realIdx];
@@ -630,6 +768,7 @@ bridge.onEvenHubEvent(async (event) => {
     cachedLicense = null;
     bookPage      = 0;
     licensePage   = 0;
+    licensePageStarts = [];
     if (selLang) await savePrefs(selLang, selBible);
     return goTestament();
   }
@@ -646,13 +785,13 @@ bridge.onEvenHubEvent(async (event) => {
     const filtered  = cachedBooks.filter(b => b.testament === selTestament);
     const pageStart = bookPage * PAGE_SIZE;
     const pageEnd   = Math.min(pageStart + PAGE_SIZE, filtered.length);
-    const pageBooks = filtered.slice(pageStart, pageEnd);
-    const hasMore   = pageEnd < filtered.length;
     const hasPrev   = bookPage > 0;
+    const hasMore   = pageEnd < filtered.length;
     const offset    = hasPrev ? 1 : 0;
-    if (hasPrev && idx === 0) { bookPage--; return goBook(); }
-    if (hasMore && idx === pageBooks.length + offset) { bookPage++; return goBook(); }
-    const realIdx = idx - offset;
+    if (hasPrev && idx === 0)                               { bookPage--; return goBook(); }
+    if (hasMore && idx === offset + (pageEnd - pageStart))  { bookPage++; return goBook(); }
+    const realIdx   = idx - offset;
+    const pageBooks = filtered.slice(pageStart, pageEnd);
     if (realIdx < 0 || realIdx >= pageBooks.length) return;
     lastBookIdx  = pageStart + realIdx;
     selBook      = pageBooks[realIdx];
@@ -662,59 +801,24 @@ bridge.onEvenHubEvent(async (event) => {
 
   if (screen === 'chapter') {
     if (!selBook) return;
-    const pageStart    = chapterPage * PAGE_SIZE;
-    const pageEnd      = Math.min(pageStart + PAGE_SIZE, selBook.chapters);
-    const pageCount    = pageEnd - pageStart;
-    const hasMore      = pageEnd < selBook.chapters;
-    const hasPrev      = chapterPage > 0;
-    const offset       = hasPrev ? 1 : 0;
-    if (hasPrev && idx === 0) { chapterPage--; return goChapter(); }
-    if (hasMore && idx === pageCount + offset) { chapterPage++; return goChapter(); }
-    const realIdx = idx - offset;
+    const pageStart = chapterPage * PAGE_SIZE;
+    const pageEnd   = Math.min(pageStart + PAGE_SIZE, selBook.chapters);
+    const pageCount = pageEnd - pageStart;
+    const hasPrev   = chapterPage > 0;
+    const hasMore   = pageEnd < selBook.chapters;
+    const offset    = hasPrev ? 1 : 0;
+    if (hasPrev && idx === 0)                          { chapterPage--; return goChapter(); }
+    if (hasMore && idx === offset + pageCount)          { chapterPage++; return goChapter(); }
+    const realIdx  = idx - offset;
     if (realIdx < 0 || realIdx >= pageCount) return;
     lastChapterIdx = pageStart + realIdx;
     selChapter     = pageStart + realIdx + 1;
     readingPage    = 0;
     cachedLines    = null;
+    readingPageStarts = [];
     return goReading();
   }
-
-  if (screen === 'reading') {
-    if (!cachedLines) return;
-    const allLines  = cachedLines.length ? cachedLines : ['(no verses)'];
-    const pageEnd   = readingPageEnd(allLines, readingPage);
-    const hasMore   = pageEnd < allLines.length;
-    const hasPrev   = readingPage > 0;
-    const pageCount = pageEnd - readingPage * PAGE_SIZE;
-    const offset    = hasPrev ? 1 : 0;
-    if (hasPrev && idx === 0) { readingPage--; return goReading(); }
-    if (hasMore && idx === pageCount + offset) { readingPage++; return goReading(); }
-  }
-
-  if (screen === 'license') {
-    if (!cachedLicense) return;
-    const pageStart = licensePage * PAGE_SIZE;
-    const pageEnd   = Math.min(pageStart + PAGE_SIZE, cachedLicense.length);
-    const hasMore   = pageEnd < cachedLicense.length;
-    const hasPrev   = licensePage > 0;
-    const pageCount = pageEnd - pageStart;
-    const offset    = hasPrev ? 1 : 0;
-    if (hasPrev && idx === 0) { licensePage--; return goLicense(); }
-    if (hasMore && idx === pageCount + offset) { licensePage++; return goLicense(); }
-  }
-
-  if (screen === 'appLicense') {
-    if (!cachedAppLicense) return;
-    const allLines  = cachedAppLicense;
-    const pageStart = appLicensePage * PAGE_SIZE;
-    const pageEnd   = Math.min(pageStart + PAGE_SIZE, allLines.length);
-    const hasMore   = pageEnd < allLines.length;
-    const hasPrev   = appLicensePage > 0;
-    const pageCount = pageEnd - pageStart;
-    const offset    = hasPrev ? 1 : 0;
-    if (hasPrev && idx === 0) { appLicensePage--; return goAppLicense(); }
-    if (hasMore && idx === pageCount + offset) { appLicensePage++; return goAppLicense(); }
-  }
+  // reading / license / appLicense: text containers, pagination via textEvent swipes only
 });
 
 // ── Startup ───────────────────────────────────────────────────────────────────
@@ -725,7 +829,6 @@ async function start() {
   if (launched) return;
   launched = true;
 
-  // Load persisted preferences from bridge storage (survives app restarts)
   const [savedLang, savedPrefs] = await Promise.all([loadAppLang(), loadPrefs()]);
 
   if (savedLang) {
