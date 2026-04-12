@@ -274,29 +274,32 @@ let cachedLangs:  Language[] | null = null;
 let cachedBibles: Bible[]    | null = null;
 let cachedBooks:  BookInfo[] | null = null;
 
-let _splashImg: Uint8Array | null = null;
-async function loadSplashImg(): Promise<Uint8Array> {
+let _splashImg: number[] | null = null;
+async function loadSplashImg(): Promise<number[]> {
   if (!_splashImg) {
+    // Send as number[] — recommended by SDK for Dart List<int> compatibility.
     const resp = await fetch(splashImgUrl as string);
-    _splashImg = new Uint8Array(await resp.arrayBuffer());
+    _splashImg = Array.from(new Uint8Array(await resp.arrayBuffer()));
   }
   return _splashImg;
 }
 
 // ── Text-page pagination (for text containers) ────────────────────────────────
 
-// Keep each page well under the 1000-char createStartUpPageContainer limit.
-// Show enough lines to overflow the 242-px content container so the firmware
-// enables internal scrolling and emits boundary textEvents at top / bottom.
-const TEXT_PAGE_CHARS    = 900; // char budget per page
+// Keep each page well under the firmware's text buffer limit.
+// Use UTF-8 byte counting so CJK scripts (3 bytes/char) are properly bounded.
+const TEXT_PAGE_BYTES    = 800; // byte budget per page
 const TEXT_PAGE_MAX_LINES = 25; // hard upper bound (25 × ~10px = 250px > 242px)
 
+const _enc = new TextEncoder();
+function utf8Bytes(s: string): number { return _enc.encode(s).length; }
+
 function computeTextPageEnd(lines: string[], start: number): number {
-  let end = start, chars = 0;
+  let end = start, bytes = 0;
   while (end < lines.length && end - start < TEXT_PAGE_MAX_LINES) {
-    const c = lines[end].length + 1; // +1 for the joining '\n'
-    if (chars + c > TEXT_PAGE_CHARS && end > start) break;
-    chars += c;
+    const b = utf8Bytes(lines[end]) + 1; // +1 for the joining '\n'
+    if (bytes + b > TEXT_PAGE_BYTES && end > start) break;
+    bytes += b;
     end++;
   }
   return end;
@@ -361,9 +364,16 @@ function sanitizeLabel(text: string): string {
   for (const [from, to] of Object.entries(GLYPH_APPROX)) {
     if (s.includes(from)) s = s.split(from).join(to);
   }
-  // 2. NFD + strip combining marks — handles Vietnamese and other accented chars
-  //    that decompose to base + diacritic (e.g. ậ → a + ̣ + ̂ → a)
-  return s.normalize('NFD').replace(/\p{Mn}/gu, '');
+  // 2. NFD + strip combining marks for accented Latin only.
+  //    Do NOT touch CJK/Korean — NFD decomposes Hangul syllables into individual
+  //    Jamo (U+1100-U+11FF) which the display font can't render as syllables.
+  return Array.from(s).map(ch => {
+    const cp = ch.codePointAt(0)!;
+    if ((cp >= 0x00C0 && cp <= 0x024F) || (cp >= 0x1E00 && cp <= 0x1EFF)) {
+      return ch.normalize('NFD').replace(/\p{Mn}/gu, '');
+    }
+    return ch;
+  }).join('');
 }
 
 // ── Text wrapping & label helpers ─────────────────────────────────────────────
@@ -424,7 +434,7 @@ async function goSplash() {
     containerTotalNum: 3,
     imageObject: [new ImageContainerProperty({
       containerID: 1, containerName: 'spl-img',
-      xPosition: 0, yPosition: 72, width: 270, height: 136,
+      xPosition: 86, yPosition: 18, width: 100, height: 100,
     })],
     textObject: [new TextContainerProperty({
       containerID: 2, containerName: 'spl-ttl',

@@ -256,6 +256,11 @@ app.get('/api/license/:langDir/:bibleFile', (req, res) => {
 
 // ── start ─────────────────────────────────────────────────────────────────────
 
+import { fileURLToPath } from 'url';
+  const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../dist');
+  app.use(express.static(DIST));
+  app.get('*', (_req, res) => res.sendFile(path.join(DIST, 'index.html')));
+
 app.listen(PORT, () => {
   console.log(`Bible API running on http://localhost:${PORT}`);
   console.log(`Database: ${DB_PATH}`);

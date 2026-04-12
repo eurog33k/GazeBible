@@ -151,3 +151,4 @@ docs/
 #EvenHub documentation files
 EVENHUB_QUICKSTART.md
 EVENHUB_GUIDE.md
+deploy.sh
