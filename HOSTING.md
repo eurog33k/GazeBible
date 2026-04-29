@@ -54,7 +54,8 @@ The server layout under `/opt/gazebible/`:
 /opt/gazebible/
 ├── backend/               Express API
 ├── bibles_combined.sqlite Database
-└── dist/                  Built frontend (uploaded by deployfe.sh)
+├── dist/                  Built frontend (uploaded by deployfe.sh)
+└── html/                  Static user manual (uploaded by deployfe.sh)
 ```
 
 ### One-time deploy script setup
@@ -131,22 +132,30 @@ Full deployment order for a new server:
 
 The `BIBLE_DB` environment variable overrides the default database path if your server layout differs from `/opt/gazebible/`.
 
-Optional nginx reverse proxy (for HTTPS / port 80):
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
+### nginx + HTTPS setup
 
-    location /api/ {
-        proxy_pass http://localhost:3001;
-    }
+A ready-made nginx config is included at `gazebible.nieuwehoop.church.nginx`. To install it:
 
-    location / {
-        root /var/www/gazebible/dist;
-        try_files $uri /index.html;
-    }
-}
+```bash
+# 1. Point the domain's DNS A record to your server IP first.
+
+# 2. Copy the config to nginx sites-available (on the server):
+scp gazebible.nieuwehoop.church.nginx root@<server-ip>:/etc/nginx/sites-available/gazebible
+
+# 3. Enable it:
+ssh root@<server-ip>
+ln -s /etc/nginx/sites-available/gazebible /etc/nginx/sites-enabled/
+nginx -t && nginx -s reload
+
+# 4. Obtain a Let's Encrypt certificate:
+#    certbot modifies the config to add the SSL server block and HTTP→HTTPS redirect.
+certbot --nginx -d gazebible.nieuwehoop.church
 ```
+
+The config sets up:
+- HTTP → HTTPS redirect
+- `/api/` → proxied to the backend on `localhost:3001`
+- `/` → static user manual from `/opt/gazebible/html/`
 
 ---
 

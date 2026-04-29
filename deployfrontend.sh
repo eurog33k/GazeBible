@@ -29,10 +29,16 @@ rsync -avz \
   "${REPO}/gazebible/dist/" \
   "${TARGET}:${DEPLOY_DIR}/dist/"
 
+echo ">>> Uploading user manual..."
+rsync -avz \
+  -e "ssh -i ${SSH_KEY}" \
+  "${REPO}/html/" \
+  "${TARGET}:${DEPLOY_DIR}/html/"
+
 # ── Restart backend ───────────────────────────────────────────────────────────
 
 echo ">>> Restarting backend on server..."
 ssh -i "${SSH_KEY}" "${TARGET}" "pm2 restart gazebible"
 
 echo ""
-echo "Done. App running at http://${SERVER_IP}:3001"
+echo "Done."

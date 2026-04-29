@@ -1,0 +1,31 @@
+server {
+    listen 80;
+    server_name gazebible.nieuwehoop.church;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name gazebible.nieuwehoop.church;
+
+    ssl_certificate     /etc/letsencrypt/live/gazebible.nieuwehoop.church/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/gazebible.nieuwehoop.church/privkey.pem;
+    include             /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam         /etc/letsencrypt/ssl-dhparams.pem;
+
+    root /opt/gazebible/html;
+    index index.html;
+
+    # API → backend
+    location /api/ {
+        proxy_pass         http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header   Host $host;
+        proxy_set_header   X-Real-IP $remote_addr;
+    }
+
+    # Everything else → HTML manual
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
