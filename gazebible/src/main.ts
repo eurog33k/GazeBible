@@ -1,9 +1,12 @@
+import { measureTextWrap, pxTruncate } from '@evenrealities/pretext';
 import {
   waitForEvenAppBridge,
   CreateStartUpPageContainer, RebuildPageContainer,
   TextContainerProperty, ListContainerProperty, ListItemContainerProperty,
   ImageContainerProperty, ImageRawDataUpdate,
-  StartUpPageCreateResult, OsEventTypeList,
+  TextContainerUpgrade,
+  StartUpPageCreateResult, OsEventTypeList, ImuReportPace,
+  LAUNCH_SOURCE_GLASSES_MENU, type LaunchSource,
 } from '@evenrealities/even_hub_sdk';
 import { UI, APP_LANG_NAMES, APP_LANG_ENGLISH_NAMES, APP_LANGS, type AppLang } from './i18n';
 import pkg from '../package.json';
@@ -106,7 +109,11 @@ interface Verse     { verse: number; text: string }
 
 // ── Persistence ───────────────────────────────────────────────────────────────
 
-interface Prefs { lang: Language; bible: Bible }
+interface Prefs    { lang: Language; bible: Bible }
+interface Position { testament: 'OT' | 'NT'; book: BookInfo; chapter: number; readingPage: number }
+interface Bookmark { id: number; label: string; testament: 'OT' | 'NT'; book: BookInfo; chapter: number; readingPage: number }
+
+const MAX_BOOKMARKS = 9;
 
 async function saveAppLang(code: AppLang) {
   try { await bridge.setLocalStorage('app-lang', code); } catch {}
@@ -127,6 +134,30 @@ async function loadPrefs(): Promise<Prefs | null> {
   try {
     const v = await bridge.getLocalStorage('bible-prefs');
     return v ? JSON.parse(v) as Prefs : null;
+  } catch { return null; }
+}
+
+async function loadBookmarks(): Promise<Bookmark[]> {
+  try {
+    const v = await bridge.getLocalStorage('bookmarks');
+    return v ? JSON.parse(v) as Bookmark[] : [];
+  } catch { return []; }
+}
+
+async function saveBookmarks(bm: Bookmark[]) {
+  try { await bridge.setLocalStorage('bookmarks', JSON.stringify(bm)); } catch {}
+}
+
+async function savePosition() {
+  if (!selBook) return;
+  const pos: Position = { testament: selTestament, book: selBook, chapter: selChapter, readingPage };
+  try { await bridge.setLocalStorage('reading-pos', JSON.stringify(pos)); } catch {}
+}
+
+async function loadPosition(): Promise<Position | null> {
+  try {
+    const v = await bridge.getLocalStorage('reading-pos');
+    return v ? JSON.parse(v) as Position : null;
   } catch { return null; }
 }
 
@@ -172,7 +203,7 @@ function makeTextReadSpec(title: string, content: string): CreateStartUpPageCont
       }),
       new TextContainerProperty({
         containerID: 2, containerName: 'rcnt',
-        xPosition: 0, yPosition: 36, width: 576, height: 242,
+        xPosition: 0, yPosition: 36, width: 576, height: 243,
         content: sanitizeLabel(content), isEventCapture: 1,
       }),
     ],
@@ -211,12 +242,32 @@ async function renderContainer(spec: CreateStartUpPageContainer) {
   }
 }
 
+let _lastTextReadTitle: string | null = null;
+
 async function showList(title: string, items: string[]) {
+  _lastTextReadTitle = null;
   await renderContainer(makeListSpec('ttl', title, 'lst', items, true, 2));
+  imuSync();
 }
 
 async function showTextReading(title: string, content: string) {
+  const safeTitle   = sanitizeLabel(title);
+  const safeContent = sanitizeLabel(content);
+
+  // Cheap path: if the same text-read layout is already on screen with the
+  // same title, only update the content container (avoids full-page flicker).
+  if (_lastTextReadTitle === safeTitle && sdkReady) {
+    const ok = await bridge.textContainerUpgrade(new TextContainerUpgrade({
+      containerID: 2, containerName: 'rcnt', content: safeContent,
+    }));
+    dbg(`[render] textContainerUpgrade ok=${ok}`);
+    if (ok) return;
+    dbg('[render] textContainerUpgrade failed, falling back to rebuild', 'warn');
+  }
+
+  _lastTextReadTitle = safeTitle;
   await renderContainer(makeTextReadSpec(title, content));
+  imuSync();
 }
 
 async function showLoading(msg?: string) {
@@ -236,7 +287,7 @@ function bookName(num: number) { return s().books[num] ?? `Book ${num}`; }
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-type Screen = 'splash' | 'appLang' | 'lang' | 'bible' | 'testament' | 'book' | 'chapter' | 'reading' | 'license' | 'appLicense';
+type Screen = 'splash' | 'appLang' | 'lang' | 'bible' | 'testament' | 'book' | 'chapter' | 'reading' | 'license' | 'appLicense' | 'bookmarks';
 let screen: Screen = 'splash';
 let splashContinue: (() => Promise<void>) | null = null;
 
@@ -270,9 +321,30 @@ let lastBibleIdx   = -1;
 let lastBookIdx    = -1;
 let lastChapterIdx = -1;
 
-let cachedLangs:  Language[] | null = null;
-let cachedBibles: Bible[]    | null = null;
-let cachedBooks:  BookInfo[] | null = null;
+let cachedLangs:      Language[] | null = null;
+let cachedBibles:     Bible[]    | null = null;
+let cachedBooks:      BookInfo[] | null = null;
+let cachedBookmarks:  Bookmark[]        = [];
+let bookmarkHasAdd    = false;  // whether "Save current" is item 0 on bookmarks screen
+let votdContent       = '';                    // "BookName Ch:V\nVerse text…" or '' while loading
+let batteryText       = '';                    // e.g. "Battery: 85%" or '' if unknown
+let _launchSource: LaunchSource | null = null; // null until onLaunchSource fires
+
+// ── Prefetch cache for adjacent chapters ─────────────────────────────────────
+const _prefetch = new Map<string, string[]>(); // "book/chapter" → wrapped lines
+function pfKey(book: number, ch: number) { return `${book}/${ch}`; }
+
+function prefetchChapter(book: number, ch: number) {
+  if (!selLang || !selBible) return;
+  const key = pfKey(book, ch);
+  if (_prefetch.has(key)) return;
+  apiFetch<Verse[]>(`/api/verses/${selLang.dir}/${selBible.file}/${book}/${ch}`)
+    .then(vv => {
+      _prefetch.set(key, vv.flatMap(v => wrapLines(`${v.verse} ${v.text}`)));
+      dbg(`[prefetch] cached ${key} (${_prefetch.size} in cache)`);
+    })
+    .catch(() => {}); // silently ignore
+}
 
 let _splashImg: number[] | null = null;
 async function loadSplashImg(): Promise<number[]> {
@@ -286,10 +358,10 @@ async function loadSplashImg(): Promise<number[]> {
 
 // ── Text-page pagination (for text containers) ────────────────────────────────
 
-// Keep each page well under the firmware's text buffer limit.
-// Use UTF-8 byte counting so CJK scripts (3 bytes/char) are properly bounded.
-const TEXT_PAGE_BYTES    = 800; // byte budget per page
-const TEXT_PAGE_MAX_LINES = 25; // hard upper bound (25 × ~10px = 250px > 242px)
+// Each page holds exactly one screenful: 9 lines × 27px = 243px (content container height).
+// No LVGL internal scrolling — tilt and R1 wheel both flip exactly one page at a time.
+const TEXT_PAGE_BYTES    = 2000; // generous byte budget (safety only, lines cap takes effect first)
+const TEXT_PAGE_MAX_LINES = 9;   // 9 × 27px = 243px = content container height
 
 const _enc = new TextEncoder();
 function utf8Bytes(s: string): number { return _enc.encode(s).length; }
@@ -389,14 +461,22 @@ function truncateLabel(s: string, maxVisual = 50): string {
   return s;
 }
 
-function wrapLines(text: string, maxLen = 53): string[] {
+// List item inner width: itemWidth(570) - 2 * LVGL_list_item_padding(12) = 546px
+const LIST_INNER_W = 546;
+
+function wrapLines(text: string): string[] {
   const words = text.split(' ');
   const lines: string[] = [];
   let cur = '';
   for (const w of words) {
     if (!cur) { cur = w; continue; }
-    if ((cur + ' ' + w).length <= maxLen) { cur += ' ' + w; }
-    else { lines.push(cur); cur = w; }
+    const candidate = cur + ' ' + w;
+    if (measureTextWrap(candidate, LIST_INNER_W).lineCount === 1) {
+      cur = candidate;
+    } else {
+      lines.push(cur);
+      cur = w;
+    }
   }
   if (cur) lines.push(cur);
   return lines;
@@ -425,22 +505,59 @@ function pagedItems(
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
-async function goSplash() {
-  screen = 'splash';
-  appLicensePage = 0;
-  appLicensePageStarts = [];
+async function fetchVotd() {
+  if (!selBible) return;
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const cached = await bridge.getLocalStorage('votd-cache');
+    if (cached) {
+      const c = JSON.parse(cached) as { date: string; content: string };
+      if (c.date === today) { votdContent = c.content; return; }
+    }
+  } catch {}
+  try {
+    const data = await apiFetch<{ book: number; chapter: number; verse: number; text: string }>(
+      `/api/votd?bible=${encodeURIComponent(selBible.file)}`
+    );
+    const ref  = `${bookName(data.book)} ${data.chapter}:${data.verse}`;
+    const line2 = pxTruncate(data.text, 576);
+    votdContent = `${ref}\n${line2}`;
+    await bridge.setLocalStorage('votd-cache', JSON.stringify({ date: today, content: votdContent }));
+  } catch {
+    votdContent = '';
+  }
+}
 
-  const spec = new CreateStartUpPageContainer({
-    containerTotalNum: 3,
+function makeSplashSpec(): CreateStartUpPageContainer {
+  return new CreateStartUpPageContainer({
+    containerTotalNum: 5,
     imageObject: [new ImageContainerProperty({
       containerID: 1, containerName: 'spl-img',
       xPosition: 86, yPosition: 18, width: 100, height: 100,
     })],
-    textObject: [new TextContainerProperty({
-      containerID: 2, containerName: 'spl-ttl',
-      xPosition: 282, yPosition: 40, width: 288, height: 52,
-      content: `GazeBible\n${_v}`, isEventCapture: 0,
-    })],
+    textObject: [
+      new TextContainerProperty({
+        containerID: 2, containerName: 'spl-ttl',
+        xPosition: 282, yPosition: 40, width: 288, height: 52,
+        content: `GazeBible\n${_v}`, isEventCapture: 0,
+      }),
+      new TextContainerProperty({
+        containerID: 4, containerName: 'spl-tip',
+        xPosition: 0, yPosition: 256, width: 576, height: 27,
+        content: (() => {
+          const warn = _launchSource === LAUNCH_SOURCE_GLASSES_MENU
+            ? 'WARNING: launched from glasses — may freeze!'
+            : 'Tip: open from phone first';
+          return batteryText ? `${warn}   ${batteryText}` : warn;
+        })(),
+        isEventCapture: 0,
+      }),
+      new TextContainerProperty({
+        containerID: 5, containerName: 'spl-votd',
+        xPosition: 0, yPosition: 194, width: 576, height: 54,
+        content: votdContent, isEventCapture: 0,
+      }),
+    ],
     listObject: [new ListContainerProperty({
       containerID: 3, containerName: 'spl-lst',
       xPosition: 282, yPosition: 100, width: 288, height: 90,
@@ -451,14 +568,42 @@ async function goSplash() {
       }),
     })],
   });
+}
 
-  await renderContainer(spec);
+async function goSplash() {
+  screen = 'splash';
+  appLicensePage = 0;
+  appLicensePageStarts = [];
+
+  await renderContainer(makeSplashSpec());
 
   const imgData = await loadSplashImg();
   const imgResult = await bridge.updateImageRawData(new ImageRawDataUpdate({
     containerID: 1, containerName: 'spl-img', imageData: imgData,
   }));
   dbg(`[splash] updateImageRawData result=${imgResult}`);
+
+  // Fetch votd and battery in background; rebuild splash when either arrives
+  const needsRebuild = { votd: false, battery: false };
+
+  if (!votdContent) {
+    fetchVotd().then(async () => {
+      needsRebuild.votd = !!votdContent;
+      if (screen === 'splash' && (needsRebuild.votd || needsRebuild.battery)) await doRebuild(makeSplashSpec());
+    });
+  }
+
+  if (!batteryText) {
+    bridge.getDeviceInfo().then(async (info) => {
+      const level = info?.status?.batteryLevel;
+      if (level != null) {
+        batteryText = `Battery: ${level}%`;
+        dbg(`[splash] battery=${level}%`);
+        needsRebuild.battery = true;
+        if (screen === 'splash') await doRebuild(makeSplashSpec());
+      }
+    }).catch(() => {});
+  }
 }
 
 async function goAppLicense() {
@@ -553,7 +698,7 @@ async function goBible(isBack = false) {
 async function goTestament(isBack = false) {
   screen = 'testament';
   if (!selBible) return goBible();
-  const opts = [s().oldTestament, s().newTestament, s().license];
+  const opts = [s().oldTestament, s().newTestament, s().bookmarks, s().license];
   const items = isBack
     ? withMarker(opts, selTestament === 'OT' ? 0 : 1)
     : plain(opts);
@@ -576,6 +721,23 @@ async function goLicense() {
     cachedLicense = null;
     await showError(`${e}`);
   }
+}
+
+async function goBookmarks() {
+  screen = 'bookmarks';
+  cachedBookmarks = await loadBookmarks();
+  const alreadyBookmarked = !!selBook && cachedBookmarks.some(
+    b => b.book.book === selBook!.book && b.chapter === selChapter
+  );
+  bookmarkHasAdd = !!selBook && !alreadyBookmarked;
+  const items: string[] = [];
+  if (bookmarkHasAdd) {
+    items.push(`+ ${bookName(selBook!.book)} ${selChapter}`);
+  }
+  items.push(...cachedBookmarks.map(b => b.label));
+  if (cachedBookmarks.length > 0) items.push(s().clearBookmarks);
+  if (items.length === 0) items.push(s().noBookmarks);
+  await showList(s().bookmarks, items);
 }
 
 async function goBook(isBack = false) {
@@ -645,52 +807,208 @@ async function goReading() {
   const title = `${bookName(selBook.book)} ${selChapter}`;
   try {
     if (!cachedLines) {
-      await showLoading(title);
-      const verses = await apiFetch<Verse[]>(
-        `/api/verses/${selLang.dir}/${selBible.file}/${selBook.book}/${selChapter}`
-      );
-      cachedLines = verses.flatMap(v => wrapLines(`${v.verse} ${v.text}`));
+      // Try the prefetch cache before hitting the network
+      const key = pfKey(selBook.book, selChapter);
+      if (_prefetch.has(key)) {
+        cachedLines = _prefetch.get(key)!;
+        _prefetch.delete(key);
+        dbg(`[prefetch] hit ${key}`);
+      } else {
+        await showLoading(title);
+        const verses = await apiFetch<Verse[]>(
+          `/api/verses/${selLang.dir}/${selBible.file}/${selBook.book}/${selChapter}`
+        );
+        cachedLines = verses.flatMap(v => wrapLines(`${v.verse} ${v.text}`));
+      }
       readingPageStarts = [];
     }
     const allLines = cachedLines.length ? cachedLines : ['(no verses)'];
     const content  = buildTextPage(readingPageStarts, readingPage, allLines);
     await showTextReading(title, content);
+    await savePosition();
+
+    // Silently prefetch adjacent chapters
+    if (selChapter > 1)                  prefetchChapter(selBook.book, selChapter - 1);
+    if (selChapter < selBook.chapters)   prefetchChapter(selBook.book, selChapter + 1);
   } catch (e) {
     await showError(`${e}`);
   }
 }
 
+// ── IMU power management ──────────────────────────────────────────────────────
+// P200 (5 Hz) on reading screens for responsive head-tilt; P1000 (1 Hz)
+// elsewhere just for keep-alive. Disabled entirely when glasses are off.
+
+let _imuRate: ImuReportPace | null = null;  // null = IMU off
+let _imuWearing = true;                     // assume wearing until told otherwise
+let _imuForeground = true;                  // assume foreground until told otherwise
+
+function imuDesiredRate(): ImuReportPace {
+  return (screen === 'reading' || screen === 'license' || screen === 'appLicense')
+    ? ImuReportPace.P200
+    : ImuReportPace.P1000;
+}
+
+async function imuSync() {
+  const shouldRun = _imuWearing && _imuForeground;
+  const desired   = shouldRun ? imuDesiredRate() : null;
+  if (desired === _imuRate) return;
+
+  if (desired === null) {
+    // Turn off
+    bridge.imuControl(false).then(ok => dbg(`[imu] stopped: ${ok}`)).catch(() => {});
+    _imuRate = null;
+  } else {
+    bridge.imuControl(true, desired).then(ok => {
+      dbg(`[imu] rate → ${desired} (${desired === ImuReportPace.P200 ? '5 Hz' : '1 Hz'}): ${ok}`);
+    }).catch(() => {});
+    _imuRate = desired;
+  }
+}
+
+// ── Page navigation helpers (shared by scroll events + head tilt) ─────────────
+
+async function pagePrev() {
+  if (screen === 'reading'    && readingPage > 0)     { readingPage--;    return goReading(); }
+  if (screen === 'license'    && licensePage > 0)     { licensePage--;    return goLicense(); }
+  if (screen === 'appLicense' && appLicensePage > 0)  { appLicensePage--; return goAppLicense(); }
+}
+
+async function pageNext() {
+  if (screen === 'reading' && cachedLines) {
+    const allLines = cachedLines.length ? cachedLines : ['(no verses)'];
+    if (textPageHasNext(readingPageStarts, readingPage, allLines)) { readingPage++; return goReading(); }
+  }
+  if (screen === 'license' && cachedLicense) {
+    if (textPageHasNext(licensePageStarts, licensePage, cachedLicense)) { licensePage++; return goLicense(); }
+  }
+  if (screen === 'appLicense' && cachedAppLicense) {
+    if (textPageHasNext(appLicensePageStarts, appLicensePage, cachedAppLicense)) { appLicensePage++; return goAppLicense(); }
+  }
+}
+
+// ── Head-tilt gesture detection (IMU) ─────────────────────────────────────────
+
+const TILT_THRESHOLD   = 0.4;  // tilt axis threshold to trigger (~23° head tilt in g-force)
+const TILT_RETURN      = 0.2;  // axis must drop below this to reset (hysteresis)
+const TILT_COOLDOWN_MS = 600;  // minimum time between tilt triggers
+
+let _tiltState: 'neutral' | 'left' | 'right' = 'neutral';
+let _lastTiltAt = 0;
+let _imuLogLast = 0;
+let _lastImuReceived = Date.now(); // updated on every event; watchdog uses this
+
+// Watchdog: if on a reading screen and no IMU events arrive for 6s, restart the IMU.
+// Handles silent imuControl failures and hardware dropout after navigation.
+setInterval(() => {
+  const needsImu = screen === 'reading' || screen === 'license' || screen === 'appLicense';
+  if (needsImu && _imuForeground && _imuWearing && Date.now() - _lastImuReceived > 3000) {
+    dbg('[imu] watchdog: no events in 3s — restarting');
+    _imuRate = null;
+    imuSync();
+  }
+}, 2000);
+
+function handleImu(x: number, y: number, z: number) {
+  _lastImuReceived = Date.now();
+  // Log one reading per second so axis values are always visible in backend console
+  const now = Date.now();
+  if (now - _imuLogLast >= 1000) {
+    dbg(`[imu] x=${x.toFixed(3)} y=${y.toFixed(3)} z=${z.toFixed(3)}`);
+    _imuLogLast = now;
+  }
+
+  // Use the axis with the largest absolute value as the tilt signal.
+  // This avoids needing to know the exact IMU orientation on the hardware.
+  const ax = Math.abs(x), ay = Math.abs(y);
+  const tiltVal = ax >= ay ? x : y;
+
+  if (_tiltState === 'neutral') {
+    if (now - _lastTiltAt < TILT_COOLDOWN_MS) return;
+
+    if (tiltVal > TILT_THRESHOLD) {
+      _tiltState = 'right';
+      _lastTiltAt = now;
+      dbg(`[tilt] right → pageNext (tiltVal=${tiltVal.toFixed(3)} x=${x.toFixed(3)} y=${y.toFixed(3)})`);
+      pageNext();
+    } else if (tiltVal < -TILT_THRESHOLD) {
+      _tiltState = 'left';
+      _lastTiltAt = now;
+      dbg(`[tilt] left → pagePrev (tiltVal=${tiltVal.toFixed(3)} x=${x.toFixed(3)} y=${y.toFixed(3)})`);
+      pagePrev();
+    }
+  } else {
+    // Return to neutral when head straightens (hysteresis band)
+    if (Math.abs(tiltVal) < TILT_RETURN) {
+      _tiltState = 'neutral';
+    }
+  }
+}
+
 // ── Events ────────────────────────────────────────────────────────────────────
 
+let _lastClickAt = 0;
+const CLICK_DEBOUNCE_MS = 300;
+
 bridge.onEvenHubEvent(async (event) => {
-  // Unconditional raw log — fires for every event
-  dbg(`[ev] txt.et=${event.textEvent?.eventType ?? '-'} list.et=${event.listEvent?.eventType ?? '-'} list.idx=${event.listEvent?.currentSelectItemIndex ?? '-'} sys.et=${event.sysEvent?.eventType ?? '-'}`);
+  // ── Foreground/background lifecycle ──────────────────────────────────────
+  // Check both sysEvent and jsonData — same routing issue as IMU events.
+  {
+    const sysEt = event.sysEvent?.eventType
+      ?? OsEventTypeList.fromJson(event.jsonData?.['eventType'] ?? event.jsonData?.['Event_Type']);
+    if (sysEt === OsEventTypeList.FOREGROUND_EXIT_EVENT) {
+      dbg('[event] backgrounded — saving position, stopping IMU');
+      _imuForeground = false;
+      imuSync();
+      await savePosition();
+      return;
+    }
+    if (sysEt === OsEventTypeList.FOREGROUND_ENTER_EVENT) {
+      dbg('[event] foregrounded — resuming IMU');
+      _imuForeground = true;
+      _imuRate = null; // force fresh imuControl call
+      imuSync();
+      return;
+    }
+  }
+
+  // ── IMU data → head-tilt gesture ────────────────────────────────────────────
+  // Path 1: SDK normalised the event into sysEvent
+  if (event.sysEvent?.eventType === OsEventTypeList.IMU_DATA_REPORT) {
+    const imu = event.sysEvent.imuData;
+    if (imu) handleImu(imu.x ?? 0, imu.y ?? 0, imu.z ?? 0);
+    return;
+  }
+  // Path 2: event arrived via jsonData without being routed to sysEvent
+  {
+    const jd = event.jsonData;
+    if (jd) {
+      const et = jd['eventType'] ?? jd['Event_Type'] ?? jd['event_type'];
+      const isImu = et === 8 || et === OsEventTypeList.IMU_DATA_REPORT
+        || et === 'IMU_DATA_REPORT' || et === 'imuDataReport';
+      if (isImu) {
+        const imuRaw = jd['imuData'] ?? jd['IMU_Data'] ?? jd['imu_data'];
+        if (imuRaw && typeof imuRaw === 'object') {
+          const r = imuRaw as Record<string, unknown>;
+          handleImu(Number(r['x'] ?? 0), Number(r['y'] ?? 0), Number(r['z'] ?? 0));
+        } else {
+          dbg(`[imu-raw] eventType=${et} jd-keys=${Object.keys(jd).join(',')}`);
+        }
+        return;
+      }
+    }
+  }
+
+  // Unconditional raw log — fires for every non-IMU event
+  dbg(`[ev] txt.et=${event.textEvent?.eventType ?? '-'} list.et=${event.listEvent?.eventType ?? '-'} list.idx=${event.listEvent?.currentSelectItemIndex ?? '-'} sys.et=${event.sysEvent?.eventType ?? '-'} jd-keys=${event.jsonData ? Object.keys(event.jsonData).join(',') : '-'}`);
 
   // ── Swipes → textEvent (fires for TextContainerProperty with isEventCapture:1) ──
   if (event.textEvent) {
     const et = event.textEvent.eventType;
     dbg(`[event] textEvent et=${et} screen=${screen}`);
 
-    if (et === OsEventTypeList.SCROLL_TOP_EVENT) {
-      if (screen === 'reading'    && readingPage > 0)     { readingPage--;    return goReading(); }
-      if (screen === 'license'    && licensePage > 0)     { licensePage--;    return goLicense(); }
-      if (screen === 'appLicense' && appLicensePage > 0)  { appLicensePage--; return goAppLicense(); }
-      return;
-    }
-
-    if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) {
-      if (screen === 'reading' && cachedLines) {
-        const allLines = cachedLines.length ? cachedLines : ['(no verses)'];
-        if (textPageHasNext(readingPageStarts, readingPage, allLines)) { readingPage++; return goReading(); }
-      }
-      if (screen === 'license' && cachedLicense) {
-        if (textPageHasNext(licensePageStarts, licensePage, cachedLicense)) { licensePage++; return goLicense(); }
-      }
-      if (screen === 'appLicense' && cachedAppLicense) {
-        if (textPageHasNext(appLicensePageStarts, appLicensePage, cachedAppLicense)) { appLicensePage++; return goAppLicense(); }
-      }
-      return;
-    }
+    if (et === OsEventTypeList.SCROLL_TOP_EVENT)    return pagePrev();
+    if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) return pageNext();
     return;
   }
 
@@ -705,6 +1023,7 @@ bridge.onEvenHubEvent(async (event) => {
     if (screen === 'chapter')    return goBook(true);
     if (screen === 'reading')    return goChapter(true);
     if (screen === 'license')    return goTestament(true);
+    if (screen === 'bookmarks')  return goTestament(true);
     if (screen === 'appLicense') return goSplash();
     return;
   }
@@ -718,6 +1037,13 @@ bridge.onEvenHubEvent(async (event) => {
 
   if (!event.listEvent && !event.sysEvent) return;
   if (!isClick(listEt) && !isClick(sysEt))  return;
+
+  const now = Date.now();
+  if (now - _lastClickAt < CLICK_DEBOUNCE_MS) {
+    dbg(`[event] click debounced (${now - _lastClickAt}ms since last)`);
+    return;
+  }
+  _lastClickAt = now;
 
   const idx = event.listEvent?.currentSelectItemIndex ?? 0;
   dbg(`[event] click idx=${idx} screen=${screen}`);
@@ -766,6 +1092,7 @@ bridge.onEvenHubEvent(async (event) => {
     selLang      = pageLangs[realIdx];
     cachedBibles = null;
     cachedBooks  = null;
+    _prefetch.clear();
     bookPage     = 0;
     return goBible();
   }
@@ -776,6 +1103,7 @@ bridge.onEvenHubEvent(async (event) => {
     selBible      = cachedBibles[idx];
     cachedBooks   = null;
     cachedLicense = null;
+    _prefetch.clear();
     bookPage      = 0;
     licensePage   = 0;
     licensePageStarts = [];
@@ -784,7 +1112,8 @@ bridge.onEvenHubEvent(async (event) => {
   }
 
   if (screen === 'testament') {
-    if (idx === 2) return goLicense();
+    if (idx === 2) return goBookmarks();
+    if (idx === 3) return goLicense();
     selTestament = idx === 0 ? 'OT' : 'NT';
     bookPage = 0;
     return goBook();
@@ -828,7 +1157,92 @@ bridge.onEvenHubEvent(async (event) => {
     readingPageStarts = [];
     return goReading();
   }
-  // reading / license / appLicense: text containers, pagination via textEvent swipes only
+  if (screen === 'bookmarks') {
+    // Item layout: ["+add"?] [...bookmarks] ["clear"?] | ["no bookmarks"]
+    const offset = bookmarkHasAdd ? 1 : 0;
+
+    if (bookmarkHasAdd && idx === 0) {
+      const label = `${bookName(selBook!.book)} ${selChapter}`;
+      const bm: Bookmark = {
+        id: Date.now(), label,
+        testament: selTestament, book: selBook!,
+        chapter: selChapter, readingPage,
+      };
+      cachedBookmarks = [bm, ...cachedBookmarks].slice(0, MAX_BOOKMARKS);
+      await saveBookmarks(cachedBookmarks);
+      bookmarkHasAdd = false;
+      return goBookmarks();
+    }
+
+    const rel = idx - offset;
+
+    // "Clear all" sits after the bookmark entries
+    if (cachedBookmarks.length > 0 && rel === cachedBookmarks.length) {
+      cachedBookmarks = [];
+      await saveBookmarks([]);
+      return goBookmarks();
+    }
+
+    // Navigate to a saved bookmark
+    if (rel >= 0 && rel < cachedBookmarks.length) {
+      const bm = cachedBookmarks[rel];
+      selTestament = bm.testament;
+      selBook      = bm.book;
+      selChapter   = bm.chapter;
+      readingPage  = bm.readingPage;
+      lastChapterIdx    = selChapter - 1;
+      chapterPage       = Math.floor(lastChapterIdx / PAGE_SIZE);
+      cachedLines       = null;
+      readingPageStarts = [];
+      return goReading();
+    }
+    return;
+  }
+
+  if (screen === 'reading' && selBook) {
+    if (selChapter < selBook.chapters) {
+      selChapter++;
+      readingPage = 0;
+      cachedLines = null;
+      readingPageStarts = [];
+      lastChapterIdx = selChapter - 1;
+      return goReading();
+    }
+    // Last chapter of book — advance to first chapter of next book
+    if (cachedBooks) {
+      const filtered = cachedBooks.filter(b => b.testament === selTestament);
+      const curIdx = filtered.findIndex(b => b.book === selBook!.book);
+      if (curIdx >= 0 && curIdx < filtered.length - 1) {
+        selBook        = filtered[curIdx + 1];
+        selChapter     = 1;
+        readingPage    = 0;
+        cachedLines    = null;
+        readingPageStarts = [];
+        lastChapterIdx = 0;
+        chapterPage    = 0;
+        return goReading();
+      }
+      // Last book of OT — cross into NT
+      if (selTestament === 'OT') {
+        const ntBooks = cachedBooks.filter(b => b.testament === 'NT');
+        if (ntBooks.length > 0) {
+          selTestament   = 'NT';
+          selBook        = ntBooks[0];
+          selChapter     = 1;
+          readingPage    = 0;
+          cachedLines    = null;
+          readingPageStarts = [];
+          lastChapterIdx = 0;
+          chapterPage    = 0;
+          bookPage       = 0;
+          return goReading();
+        }
+      }
+    }
+    return goChapter(true);
+  }
+
+  // license / appLicense: text containers, pagination via textEvent swipes only
 });
 
 // ── Startup ───────────────────────────────────────────────────────────────────
@@ -839,7 +1253,9 @@ async function start() {
   if (launched) return;
   launched = true;
 
-  const [savedLang, savedPrefs] = await Promise.all([loadAppLang(), loadPrefs()]);
+  const [savedLang, savedPrefs, savedPos] = await Promise.all([
+    loadAppLang(), loadPrefs(), loadPosition(),
+  ]);
 
   if (savedLang) {
     appLang = savedLang;
@@ -849,15 +1265,48 @@ async function start() {
   if (savedPrefs) {
     selLang  = savedPrefs.lang;
     selBible = savedPrefs.bible;
-    splashContinue = () => goTestament();
+
+    if (savedPos) {
+      selTestament   = savedPos.testament;
+      selBook        = savedPos.book;
+      selChapter     = savedPos.chapter;
+      readingPage    = savedPos.readingPage;
+      // Restore chapter-page so back-navigation lands on the right page
+      lastChapterIdx = selChapter - 1;
+      chapterPage    = Math.floor(lastChapterIdx / PAGE_SIZE);
+      splashContinue = () => goReading();
+    } else {
+      splashContinue = () => goTestament();
+    }
   } else if (savedLang) {
     splashContinue = () => goLang();
   } else {
     splashContinue = () => goAppLang();
   }
 
+  // Start IMU (rate depends on current screen) and listen for wearing changes.
+  imuSync();
+
+  bridge.onDeviceStatusChanged((status) => {
+    const wasWearing = _imuWearing;
+    _imuWearing = status.isWearing !== false;  // default to true if unknown
+    if (wasWearing !== _imuWearing) {
+      dbg(`[device] wearing=${_imuWearing}`);
+      imuSync();
+    }
+  });
+
   await goSplash();
 }
 
-bridge.onLaunchSource(() => start());
+bridge.onLaunchSource((src) => {
+  _launchSource = src;
+  dbg(`[launch] source=${src}`);
+  if (!launched) {
+    start();
+  } else if (screen === 'splash') {
+    // start() already ran — rebuild the tip line with the now-known source
+    doRebuild(makeSplashSpec());
+  }
+});
 start();

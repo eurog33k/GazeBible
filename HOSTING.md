@@ -1,11 +1,11 @@
-# Bible App — Hosting Guide
+# GazeBible — Hosting Guide
 
 ## Project layout
 
 ```
 evenrealities/
-├── bible-backend/      Express API (reads the combined SQLite)
-├── even-bible/         Even Hub frontend (Vite + TypeScript)
+├── bible-backend/      Express API + static file server (reads the combined SQLite)
+├── gazebible/          Even Hub frontend (Vite + TypeScript)
 └── bible/
     ├── bibles_combined.sqlite   Single database — all metadata + verses
     ├── bibles_sqlite_6.0/       Source files (local dev/rebuild only)
@@ -27,9 +27,9 @@ npm run dev          # API on http://localhost:3001
 
 **Terminal 2 — Frontend**
 ```bash
-cd ~/Documents/evenrealities/even-bible
+cd ~/Documents/evenrealities/gazebible
 npm install
-npm run dev          # Vite on http://localhost:5173
+npm run dev          # Vite on http://localhost:5173 (proxies /api/ → :3001)
 ```
 
 **Terminal 3 — Simulator (optional)**
@@ -39,7 +39,7 @@ evenhub-simulator http://localhost:5173
 
 **Test on glasses (QR code)**
 ```bash
-cd ~/Documents/evenrealities/even-bible
+cd ~/Documents/evenrealities/gazebible
 evenhub qr --port 5173
 ```
 Then: Even app → Even Hub tab → top-right → Developer Hub → Prototype Mode → scan QR.
@@ -47,54 +47,91 @@ Glasses and phone must be on the same Wi-Fi network.
 
 ---
 
-## Production — same machine
+## Deploying to production
 
-The simplest setup: run the backend and serve the built frontend from it.
-
-**Step 1 — Build the frontend**
-```bash
-cd ~/Documents/evenrealities/even-bible
-VITE_API_URL=http://<YOUR-IP>:3001 npm run build
+The server layout under `/opt/gazebible/`:
 ```
-Replace `<YOUR-IP>` with your machine's local IP (e.g. `192.168.1.42`).
-Find it with: `ipconfig getifaddr en0`
-
-**Step 2 — Serve frontend from the backend**
-
-Add this to `bible-backend/src/server.ts` before `app.listen` (already commented out):
-
-```typescript
-import { fileURLToPath } from 'url';
-const DIST = path.join(__dirname, '../../even-bible/dist');
-app.use(express.static(DIST));
-app.get('*', (_req, res) => res.sendFile(path.join(DIST, 'index.html')));
+/opt/gazebible/
+├── backend/               Express API
+├── bibles_combined.sqlite Database
+└── dist/                  Built frontend (uploaded by deployfe.sh)
 ```
 
-Or just start the backend and point the Even app to:
-`http://<YOUR-IP>:3001`
+### One-time deploy script setup
 
-**Step 3 — Keep it running**
+The repo includes three deploy script templates. Copy them and fill in your server IP — the personalised copies are gitignored so your IP never gets committed:
 
-Install `pm2`:
 ```bash
+cp deployfrontend.sh deployfe.sh
+cp deploybackend.sh  deploybe.sh
+cp deploydatabase.sh deploydb.sh
+# Edit each file — replace YOUR_SERVER_IP with the actual IP
+```
+
+### Deploy the database (first time, and when translations change)
+
+The combined SQLite database is **not in the repo** (it's 370 MB). It must be built on your workstation first, then uploaded to the server.
+
+**Step 1 — Build on your workstation:**
+```bash
+cd bible
+python3 merge_bibles.py
+```
+This reads all the individual `.sqlite` files from `bibles_sqlite_6.0/` and produces `bibles_combined.sqlite`. Delete the file first if it already exists (the script refuses to overwrite).
+
+**Step 2 — Upload to the server:**
+```bash
+./deploydb.sh
+```
+Rsyncs `bible/bibles_combined.sqlite` to `/opt/gazebible/bibles_combined.sqlite`. Takes a while at ~370 MB. Only needs to be run again if you add new translations.
+
+### Deploy frontend changes
+
+```bash
+./deployfe.sh
+```
+
+Builds the frontend, uploads `dist/` to the server, and restarts pm2.
+
+### Deploy backend changes
+
+```bash
+./deploybe.sh
+```
+
+Rsyncs `bible-backend/` to `/opt/gazebible/backend/` (excluding `node_modules/` and `dist/`), runs `npm install` on the server, and restarts pm2.
+
+### First-time server setup
+
+Install Node.js, npm, and pm2 on the server (only needed once):
+
+```bash
+# Install Node.js + npm (Ubuntu/Debian)
+curl -fsSL https://deb.nodesource.com/setup_lts.x | bash -
+apt-get install -y nodejs
+
+# Install pm2 globally
 npm install -g pm2
-cd ~/Documents/evenrealities/bible-backend
-pm2 start "npm run dev" --name bible-api
-pm2 save
-pm2 startup    # auto-start on reboot
 ```
+
+Then run `./deploybe.sh` — it uploads the backend, starts the service, saves the process list, and registers the systemd unit for auto-start on reboot.
+
+The app is then available at `http://<your-server-ip>:3001`.
 
 ---
 
-## Production — cloud (e.g. a cheap VPS)
+## Cloud / VPS deployment
 
-1. Copy the `bible-backend/` folder and `bible/bibles_combined.sqlite` to the server.
-   (`bibles_sqlite_6.0/` is **not** needed on the server.)
-2. Set the env var `BIBLE_DB` to the absolute path of `bibles_combined.sqlite` on the server.
-3. Build the frontend with `VITE_API_URL=https://your-domain.com npm run build`.
-4. Serve with nginx + pm2, or use a single Express app that serves the static files.
+Full deployment order for a new server:
 
-Example nginx config:
+1. Install Node.js, npm, and pm2 (see First-time server setup above).
+2. Build the database on your workstation and run `./deploydb.sh`.
+3. Run `./deploybe.sh` — uploads the backend, starts the service, configures reboot persistence.
+4. Run `./deployfe.sh` — builds and uploads the frontend.
+
+The `BIBLE_DB` environment variable overrides the default database path if your server layout differs from `/opt/gazebible/`.
+
+Optional nginx reverse proxy (for HTTPS / port 80):
 ```nginx
 server {
     listen 80;
@@ -105,7 +142,7 @@ server {
     }
 
     location / {
-        root /var/www/bible/dist;
+        root /var/www/gazebible/dist;
         try_files $uri /index.html;
     }
 }
@@ -113,10 +150,96 @@ server {
 
 ---
 
+## Publishing to Even Hub marketplace
+
+### Prerequisites
+
+- **Even Hub CLI** installed globally: `sudo npm install -g @evenrealities/evenhub-cli`
+- **Even Hub developer account** at https://preview.evenhub.evenrealities.com
+- **Even app** version 2.1.1 or later on your phone
+
+### Files already prepared
+
+| File | Purpose |
+|---|---|
+| `gazebible/app.json` | Manifest (package ID, version, permissions, supported languages) |
+| `gazebible/marketplace-icon.png` | Marketplace icon (288×144px, 8-bit greyscale) |
+
+### Step-by-step
+
+**1. Bump the version** (if publishing an update)
+
+Update the `version` field in both files — they should match:
+- `gazebible/app.json` → `"version": "1.1.0"`
+- `gazebible/package.json` → `"version": "1.1.0"`
+
+**2. Build the frontend**
+
+```bash
+cd ~/Documents/evenrealities/gazebible
+npm run build
+```
+
+**3. Log in to Even Hub** (first time only, or when token expires)
+
+```bash
+evenhub login
+```
+
+Follow the prompts to authenticate with your developer account.
+
+**4. Pack the app**
+
+```bash
+evenhub pack app.json ./dist
+```
+
+This produces `out.ehpk` (~85KB) in the current directory.
+
+**5. Upload to the developer portal**
+
+1. Go to https://preview.evenhub.evenrealities.com
+2. Log in with your developer account
+3. Create a new app (first time) or update the existing one
+4. Upload `out.ehpk`
+5. Upload `marketplace-icon.png` as the app icon
+6. Fill in the app description, screenshots, and category
+7. Submit for review
+
+### Manifest reference (`app.json`)
+
+```json
+{
+  "package_id": "com.eurog33k.gazebible",
+  "edition": "202601",
+  "name": "GazeBible",
+  "version": "1.0.0",
+  "min_app_version": "2.1.1",
+  "min_sdk_version": "0.0.9",
+  "entrypoint": "index.html",
+  "permissions": [
+    {
+      "name": "network",
+      "desc": "Fetches Bible verses, book lists, and verse of the day from the backend API."
+    }
+  ],
+  "supported_languages": ["en", "de", "fr", "es", "it", "zh", "ja", "ko"]
+}
+```
+
+Key rules:
+- **package_id**: lowercase, no hyphens, at least two segments
+- **name**: max 20 characters
+- **edition**: must be `"202601"`
+- **permissions**: array of objects (not a key-value map)
+
+---
+
 ## Changing the app language
 
 Every launch starts with the **splash screen**. Click through it and the app goes to:
-- The OT/NT screen directly, if a Bible was previously selected.
+- The last-read chapter directly, if a Bible and position were previously saved.
+- The OT/NT screen, if a Bible was previously selected but no position is saved.
 - The language picker, if no Bible has been selected yet.
 
 To change the language or Bible from inside the app: double-click your way back to the relevant screen. Double-clicking on the app language screen returns to the splash screen.
@@ -130,3 +253,4 @@ To change the language or Bible from inside the app: double-click your way back 
 | `PORT` | `3001` | Backend port |
 | `BIBLE_DB` | `../bible/bibles_combined.sqlite` | Path to the combined SQLite database |
 | `VITE_API_URL` | `''` (proxy) | Backend URL for prod builds |
+

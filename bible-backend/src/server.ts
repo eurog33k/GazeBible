@@ -222,6 +222,44 @@ app.get('/api/verses/:langDir/:bibleFile/:book/:chapter', (req, res) => {
   }
 });
 
+// ── /api/votd ─────────────────────────────────────────────────────────────────
+
+app.get('/api/votd', (req, res) => {
+  const bibleFile = String(req.query.bible ?? '');
+  if (!bibleFile) return void res.status(400).json({ error: 'bible param required' });
+
+  const now       = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const dayOfYear = Math.floor((now.getTime() - yearStart.getTime()) / 86400000);
+
+  try {
+    const { total } = db.prepare(`
+      SELECT COUNT(*) AS total FROM verses ve
+      JOIN versions v ON v.id = ve.version_id
+      WHERE v.module = ?
+    `).get(bibleFile) as { total: number };
+
+    if (!total) return void res.status(404).json({ error: 'Bible not found' });
+
+    const offset = dayOfYear % total;
+
+    const row = db.prepare(`
+      SELECT ve.book, ve.chapter, ve.verse, ve.text
+      FROM verses ve
+      JOIN versions v ON v.id = ve.version_id
+      WHERE v.module = ?
+      ORDER BY ve.book, ve.chapter, ve.verse
+      LIMIT 1 OFFSET ?
+    `).get(bibleFile, offset) as { book: number; chapter: number; verse: number; text: string } | undefined;
+
+    if (!row) return void res.status(404).json({ error: 'No verse found' });
+
+    res.json({ book: row.book, chapter: row.chapter, verse: row.verse, text: cleanText(row.text) });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 // ── /api/license/:langDir/:bibleFile ─────────────────────────────────────────
 
 app.get('/api/license/:langDir/:bibleFile', (req, res) => {
@@ -256,7 +294,6 @@ app.get('/api/license/:langDir/:bibleFile', (req, res) => {
 
 // ── start ─────────────────────────────────────────────────────────────────────
 
-import { fileURLToPath } from 'url';
   const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../dist');
   app.use(express.static(DIST));
   app.get('*', (_req, res) => res.sendFile(path.join(DIST, 'index.html')));

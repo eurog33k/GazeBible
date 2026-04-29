@@ -4,15 +4,18 @@
 export type AppLang = 'en' | 'nl' | 'fr' | 'de' | 'es' | 'pt' | 'it' | 'pl' | 'af' | 'cs' | 'fi' | 'id' | 'ro' | 'sw' | 'tl' | 'ru' | 'ja' | 'vi' | 'ha' | 'lt' | 'so' | 'wo' | 'hu' | 'tr' | 'zh' | 'ko' | 'sq' | 'lv' | 'ht' | 'mi';
 
 export interface Strings {
-  appLangTitle:  string;
-  bibleLanguage: string;
-  bibleVersion:  string;
-  oldTestament:  string;
-  newTestament:  string;
-  loading:       string;
-  license:       string;
-  more:          string;
-  back:          string;
+  appLangTitle:    string;
+  bibleLanguage:   string;
+  bibleVersion:    string;
+  oldTestament:    string;
+  newTestament:    string;
+  loading:         string;
+  license:         string;
+  more:            string;
+  back:            string;
+  bookmarks:       string;
+  clearBookmarks:  string;
+  noBookmarks:     string;
   books: Record<number, string>;
 }
 
@@ -47,6 +50,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'License',
     more:          '(more...)',
     back:          '(back...)',
+    bookmarks:       'Bookmarks',
+    clearBookmarks:  'Clear all',
+    noBookmarks:     'No bookmarks',
     books: EN_BOOKS,
   },
 
@@ -60,6 +66,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Licentie',
     more:          '(meer...)',
     back:          '(terug...)',
+    bookmarks:       'Bladwijzers',
+    clearBookmarks:  'Alles wissen',
+    noBookmarks:     'Geen bladwijzers',
     books: {
       1:'Genesis',2:'Exodus',3:'Leviticus',4:'Numeri',5:'Deuteronomium',
       6:'Jozua',7:'Richteren',8:'Ruth',9:'1 Samuël',10:'2 Samuël',
@@ -88,12 +97,11 @@ export const UI: Record<AppLang, Strings> = {
     newTestament:  'Nouveau Testament',
     loading:       'Chargement...',
     license:       'Licence',
-    more:          '(vairāk...)',
-    back:          '(atpakaļ...)',
-    more:          '(více...)',
-    back:          '(zpět...)',
     more:          '(suite...)',
     back:          '(retour...)',
+    bookmarks:       'Signets',
+    clearBookmarks:  'Tout effacer',
+    noBookmarks:     'Aucun signet',
     books: {
       1:'Genèse',2:'Exode',3:'Lévitique',4:'Nombres',5:'Deutéronome',
       6:'Josué',7:'Juges',8:'Ruth',9:'1 Samuel',10:'2 Samuel',
@@ -124,6 +132,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Lizenz',
     more:          '(mehr...)',
     back:          '(zurück...)',
+    bookmarks:       'Lesezeichen',
+    clearBookmarks:  'Alle loschen',
+    noBookmarks:     'Keine Lesezeichen',
     books: {
       1:'1 Mose',2:'2 Mose',3:'3 Mose',4:'4 Mose',5:'5 Mose',
       6:'Josua',7:'Richter',8:'Ruth',9:'1 Samuel',10:'2 Samuel',
@@ -154,6 +165,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Licencia',
     more:          '(más...)',
     back:          '(atrás...)',
+    bookmarks:       'Marcadores',
+    clearBookmarks:  'Borrar todo',
+    noBookmarks:     'Sin marcadores',
     books: {
       1:'Génesis',2:'Éxodo',3:'Levítico',4:'Números',5:'Deuteronomio',
       6:'Josué',7:'Jueces',8:'Rut',9:'1 Samuel',10:'2 Samuel',
@@ -184,6 +198,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Licença',
     more:          '(mais...)',
     back:          '(voltar...)',
+    bookmarks:       'Marcadores',
+    clearBookmarks:  'Limpar tudo',
+    noBookmarks:     'Sem marcadores',
     books: {
       1:'Gênesis',2:'Êxodo',3:'Levítico',4:'Números',5:'Deuteronômio',
       6:'Josué',7:'Juízes',8:'Rute',9:'1 Samuel',10:'2 Samuel',
@@ -214,6 +231,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Licenza',
     more:          '(altro...)',
     back:          '(indietro...)',
+    bookmarks:       'Segnalibri',
+    clearBookmarks:  'Cancella tutto',
+    noBookmarks:     'Nessun segnalibro',
     books: {
       1:'Genesi',2:'Esodo',3:'Levitico',4:'Numeri',5:'Deuteronomio',
       6:'Giosuè',7:'Giudici',8:'Rut',9:'1 Samuele',10:'2 Samuele',
@@ -244,6 +264,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Licencja',
     more:          '(więcej...)',
     back:          '(wstecz...)',
+    bookmarks:       'Zakladki',
+    clearBookmarks:  'Wyczysc wszystko',
+    noBookmarks:     'Brak zakladek',
     books: {
       1:'Rodzaju',2:'Wyjścia',3:'Kapłańska',4:'Liczb',5:'Powtórzonego Prawa',
       6:'Jozuego',7:'Sędziów',8:'Rut',9:'1 Samuela',10:'2 Samuela',
@@ -274,6 +297,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Lisensie',
     more:          '(meer...)',
     back:          '(terug...)',
+    bookmarks:       'Boekmerke',
+    clearBookmarks:  'Verwyder alles',
+    noBookmarks:     'Geen boekmerke',
     books: {
       1:'Genesis',2:'Eksodus',3:'Levitikus',4:'Numeri',5:'Deuteronomium',
       6:'Josua',7:'Rigters',8:'Rut',9:'1 Samuel',10:'2 Samuel',
@@ -302,6 +328,11 @@ export const UI: Record<AppLang, Strings> = {
     newTestament:  'Nový zákon',
     loading:       'Načítání...',
     license:       'Licence',
+    more:          '(vice...)',
+    back:          '(zpet...)',
+    bookmarks:       'Zalozky',
+    clearBookmarks:  'Smazat vse',
+    noBookmarks:     'Zadne zalozky',
     books: {
       1:'Genesis',2:'Exodus',3:'Leviticus',4:'Numeri',5:'Deuteronomium',
       6:'Jozue',7:'Soudců',8:'Rút',9:'1 Samuel',10:'2 Samuel',
@@ -332,6 +363,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Lisenssi',
     more:          '(lisää...)',
     back:          '(takaisin...)',
+    bookmarks:       'Kirjanmerkit',
+    clearBookmarks:  'Poista kaikki',
+    noBookmarks:     'Ei kirjanmerkkeja',
     books: {
       1:'1 Moos.',2:'2 Moos.',3:'3 Moos.',4:'4 Moos.',5:'5 Moos.',
       6:'Joosua',7:'Tuomarien',8:'Ruut',9:'1 Samuelin',10:'2 Samuelin',
@@ -362,6 +396,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Lisensi',
     more:          '(lainnya...)',
     back:          '(kembali...)',
+    bookmarks:       'Penanda',
+    clearBookmarks:  'Hapus semua',
+    noBookmarks:     'Tidak ada penanda',
     books: {
       1:'Kejadian',2:'Keluaran',3:'Imamat',4:'Bilangan',5:'Ulangan',
       6:'Yosua',7:'Hakim-hakim',8:'Rut',9:'1 Samuel',10:'2 Samuel',
@@ -392,6 +429,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Licență',
     more:          '(mai mult...)',
     back:          '(înapoi...)',
+    bookmarks:       'Marcaje',
+    clearBookmarks:  'Sterge tot',
+    noBookmarks:     'Fara marcaje',
     books: {
       1:'Geneza',2:'Exodul',3:'Leviticul',4:'Numerii',5:'Deuteronomul',
       6:'Iosua',7:'Judecători',8:'Rut',9:'1 Samuel',10:'2 Samuel',
@@ -422,6 +462,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Leseni',
     more:          '(zaidi...)',
     back:          '(rudi...)',
+    bookmarks:       'Alama',
+    clearBookmarks:  'Futa zote',
+    noBookmarks:     'Hakuna alama',
     books: {
       1:'Mwanzo',2:'Kutoka',3:'Mambo ya Walawi',4:'Hesabu',5:'Kumbukumbu',
       6:'Yoshua',7:'Waamuzi',8:'Ruthu',9:'1 Samweli',10:'2 Samweli',
@@ -452,6 +495,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Lisensya',
     more:          '(higit...)',
     back:          '(bumalik...)',
+    bookmarks:       'Mga Bookmark',
+    clearBookmarks:  'Burahin lahat',
+    noBookmarks:     'Walang bookmark',
     books: {
       1:'Genesis',2:'Exodo',3:'Levitico',4:'Mga Bilang',5:'Deuteronomio',
       6:'Josue',7:'Mga Hukom',8:'Ruth',9:'1 Samuel',10:'2 Samuel',
@@ -482,6 +528,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Лицензия',
     more:          '(далее...)',
     back:          '(назад...)',
+    bookmarks:       'Закладки',
+    clearBookmarks:  'Удалить все',
+    noBookmarks:     'Нет закладок',
     books: {
       1:'Бытие',2:'Исход',3:'Левит',4:'Числа',5:'Второзаконие',
       6:'Иисус Навин',7:'Судьи',8:'Руфь',9:'1 Царств',10:'2 Царств',
@@ -512,6 +561,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'ライセンス',
     more:          '(次へ...)',
     back:          '(戻る...)',
+    bookmarks:       'ブックマーク',
+    clearBookmarks:  'すべて削除',
+    noBookmarks:     'ブックマークなし',
     books: {
       1:'創世記',2:'出エジプト記',3:'レビ記',4:'民数記',5:'申命記',
       6:'ヨシュア記',7:'士師記',8:'ルツ記',9:'サムエル記上',10:'サムエル記下',
@@ -542,6 +594,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Giấy phép',
     more:          '(thêm...)',
     back:          '(quay lại...)',
+    bookmarks:       'Dau trang',
+    clearBookmarks:  'Xoa tat ca',
+    noBookmarks:     'Khong co dau trang',
     books: {
       1:'Sáng Thế Ký',2:'Xuất Ai Cập Ký',3:'Lê Vi Ký',4:'Dân Số Ký',5:'Phục Truyền',
       6:'Giô-suê',7:'Các Quan Xét',8:'Ru-tơ',9:'1 Sa-mu-ên',10:'2 Sa-mu-ên',
@@ -572,6 +627,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Lasisi',
     more:          '(ƙari...)',
     back:          '(koma...)',
+    bookmarks:       'Alamomi',
+    clearBookmarks:  'Share duka',
+    noBookmarks:     'Babu alamomi',
     books: {
       1:'Farawa',2:'Fitowa',3:'Lawiyawa',4:'Kidaya',5:'Kubawar Shari\'a',
       6:'Yoshuwa',7:'Alƙalai',8:'Rut',9:'1 Sama\'ila',10:'2 Sama\'ila',
@@ -602,6 +660,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Licencija',
     more:          '(daugiau...)',
     back:          '(atgal...)',
+    bookmarks:       'Zymeles',
+    clearBookmarks:  'Istrinti viska',
+    noBookmarks:     'Nera zymeliu',
     books: {
       1:'Pradžios',2:'Išėjimo',3:'Kunigų',4:'Skaičių',5:'Pakartoto Įstatymo',
       6:'Jozuės',7:'Teisėjų',8:'Rutos',9:'1 Samuelio',10:'2 Samuelio',
@@ -632,6 +693,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Ogolaansho',
     more:          '(badan...)',
     back:          '(dib...)',
+    bookmarks:       'Calaamadaha',
+    clearBookmarks:  'Tirtir dhammaan',
+    noBookmarks:     'Ma jiraan calaamad',
     books: {
       1:'Bilowgii',2:'Baxniintii',3:'Laawiyiintii',4:'Tirinta',5:'Sharciga Kunoqoshadiisa',
       6:'Yushuca',7:'Xaakinnadii',8:'Ruud',9:'1 Samueel',10:'2 Samueel',
@@ -662,6 +726,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Lisaans',
     more:          '(yokk...)',
     back:          '(dellu...)',
+    bookmarks:       'Tank yi',
+    clearBookmarks:  'Feenal yepp',
+    noBookmarks:     'Amul tank',
     books: {
       1:'Génèse',2:'Exode',3:'Lévitique',4:'Nombres',5:'Deutéronome',
       6:'Josué',7:'Juges',8:'Ruth',9:'1 Samuel',10:'2 Samuel',
@@ -692,6 +759,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Licenc',
     more:          '(több...)',
     back:          '(vissza...)',
+    bookmarks:       'Konyvjelzok',
+    clearBookmarks:  'Osszes torlese',
+    noBookmarks:     'Nincs konyvjelzo',
     books: {
       1:'1 Mózes',2:'2 Mózes',3:'3 Mózes',4:'4 Mózes',5:'5 Mózes',
       6:'Józsué',7:'Bírák',8:'Ruth',9:'1 Sámuel',10:'2 Sámuel',
@@ -720,10 +790,11 @@ export const UI: Record<AppLang, Strings> = {
     newTestament:  'Yeni Ahit',
     loading:       'Yükleniyor...',
     license:       'Lisans',
-    more:          '(plis...)',
-    back:          '(retounen...)',
     more:          '(daha...)',
     back:          '(geri...)',
+    bookmarks:       'Yer imleri',
+    clearBookmarks:  'Tumunu sil',
+    noBookmarks:     'Yer imi yok',
     books: {
       1:'Yaratılış',2:'Çıkış',3:'Levililer',4:'Sayılar',5:"Yasa'nın Tekrarı",
       6:'Yeşu',7:'Hâkimler',8:'Rut',9:'1 Samuel',10:'2 Samuel',
@@ -754,6 +825,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       '许可证',
     more:          '(更多...)',
     back:          '(返回...)',
+    bookmarks:       '书签',
+    clearBookmarks:  '清除所有',
+    noBookmarks:     '无书签',
     books: {
       1:'创世记',2:'出埃及记',3:'利未记',4:'民数记',5:'申命记',
       6:'约书亚记',7:'士师记',8:'路得记',9:'撒母耳记上',10:'撒母耳记下',
@@ -784,6 +858,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       '라이선스',
     more:          '(더...)',
     back:          '(이전...)',
+    bookmarks:       '책갈피',
+    clearBookmarks:  '모두 삭제',
+    noBookmarks:     '책갈피 없음',
     books: {
       1:'창세기',2:'출애굽기',3:'레위기',4:'민수기',5:'신명기',
       6:'여호수아',7:'사사기',8:'룻기',9:'사무엘상',10:'사무엘하',
@@ -814,6 +891,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Licencë',
     more:          '(më...)',
     back:          '(mbrapa...)',
+    bookmarks:       'Faqeshenues',
+    clearBookmarks:  'Fshi te gjitha',
+    noBookmarks:     'Nuk ka faqeshenues',
     books: {
       1:'Zanafilla',2:'Eksodi',3:'Levitiku',4:'Numrat',5:'Ligji i Përtërirë',
       6:'Jozueu',7:'Gjyqtarët',8:'Ruthi',9:'1 Samuelit',10:'2 Samuelit',
@@ -842,6 +922,11 @@ export const UI: Record<AppLang, Strings> = {
     newTestament:  'Jaunā Derība',
     loading:       'Ielādē...',
     license:       'Licence',
+    more:          '(vairak...)',
+    back:          '(atpakal...)',
+    bookmarks:       'Gramatzimes',
+    clearBookmarks:  'Dzest visu',
+    noBookmarks:     'Nav gramatzimju',
     books: {
       1:'1. Mozus',2:'2. Mozus',3:'3. Mozus',4:'4. Mozus',5:'5. Mozus',
       6:'Jozua',7:'Soģu',8:'Rūta',9:'1. Samuēla',10:'2. Samuēla',
@@ -870,6 +955,11 @@ export const UI: Record<AppLang, Strings> = {
     newTestament:  'Nouvo Testaman',
     loading:       'Ap chaje...',
     license:       'Lisans',
+    more:          '(plis...)',
+    back:          '(retounen...)',
+    bookmarks:       'Make',
+    clearBookmarks:  'Efase tout',
+    noBookmarks:     'Pa gen make',
     books: {
       1:'Jenèz',2:'Egzòd',3:'Levitik',4:'Nonm',5:'Detewonòm',
       6:'Jozye',7:'Jij',8:'Rit',9:'1 Samyèl',10:'2 Samyèl',
@@ -900,6 +990,9 @@ export const UI: Record<AppLang, Strings> = {
     license:       'Raihana',
     more:          '(tāpiri...)',
     back:          '(hoki...)',
+    bookmarks:       'Tohu',
+    clearBookmarks:  'Mukua katoa',
+    noBookmarks:     'Kaore he tohu',
     books: {
       1:'Kenehi',2:'Ekodho',3:'Rewitiku',4:'Nama',5:'Teuteronōmi',
       6:'Hohōha',7:'Ngā Kaiwhakawa',8:'Rūta',9:'1 Hamuera',10:'2 Hamuera',

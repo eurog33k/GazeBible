@@ -2,7 +2,7 @@
 
 Source: https://www.biblesupersearch.com/bible-downloads/
 
-The combined database is **not included** in this repository because it exceeds GitHub's file size limits. Download the source files from the link above and run `merge_bibles.py` to build it.
+The source files are included in this repository under `bibles_sqlite_6.0/`. The combined database is **not included** because it exceeds GitHub's 100 MB file size limit — run `merge_bibles.py` to build it locally. The link above is the original source if you want to add more translations.
 
 ---
 
@@ -100,10 +100,8 @@ verses   (id, version_id, book, chapter, verse, text)
 
 ## Pointing the backend at the data
 
-The backend reads from the per-language source folders by default:
+The backend reads from `bibles_combined.sqlite`. By default it looks for it at `../bible/bibles_combined.sqlite` relative to the backend directory. Override with the `BIBLE_DB` environment variable:
 
+```bash
+BIBLE_DB=/opt/gazebible/bibles_combined.sqlite npm run dev
 ```
-bible-backend/src/server.ts  →  BIBLES_DIR defaults to ../../bible/bibles_sqlite_6.0
-```
-
-Override with the `BIBLES_DIR` environment variable if needed.

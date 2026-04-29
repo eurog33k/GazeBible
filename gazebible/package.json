@@ -1,5 +1,5 @@
 {
-  "name": "even-bible",
+  "name": "gazebible",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "@evenrealities/even_hub_sdk": "^0.0.9"
   },
   "devDependencies": {
+    "@evenrealities/pretext": "^0.1.4",
     "typescript": "^6.0.2",
     "vite": "^8.0.3"
   }

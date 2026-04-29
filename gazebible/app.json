@@ -1,0 +1,16 @@
+{
+  "package_id": "com.eurog33k.gazebible",
+  "edition": "202601",
+  "name": "GazeBible",
+  "version": "1.0.0",
+  "min_app_version": "2.1.1",
+  "min_sdk_version": "0.0.9",
+  "entrypoint": "index.html",
+  "permissions": [
+    {
+      "name": "network",
+      "desc": "Fetches Bible verses, book lists, and verse of the day from the backend API."
+    }
+  ],
+  "supported_languages": ["en", "de", "fr", "es", "it", "zh", "ja", "ko"]
+}

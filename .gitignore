@@ -151,4 +151,12 @@ docs/
 #EvenHub documentation files
 EVENHUB_QUICKSTART.md
 EVENHUB_GUIDE.md
+
+#deploy scripts contain server IP (use deployfrontend.sh / deploybackend.sh / deploydatabase.sh as templates)
 deploy.sh
+deployfe.sh
+deploybe.sh
+deploydb.sh
+
+#Even Hub packed app artifact
+*.ehpk
