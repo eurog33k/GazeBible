@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GazeBible — User Guide</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --border:   #2a2d3a;
+      --accent:   #6c8ebf;
+      --accent2:  #4a7c9e;
+      --text:     #e2e6f0;
+      --muted:    #8892a4;
+      --warn-bg:  #2a1f0e;
+      --warn-bdr: #7a4f1a;
+      --warn-txt: #f0b060;
+      --tip-bg:   #0e1f2a;
+      --tip-bdr:  #1a4a6e;
+      --tip-txt:  #60b0f0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ── */
+    .page {
+      max-width: 740px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── Header ── */
+    header {
+      padding: 48px 0 40px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 48px;
+    }
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .logo-row svg {
+      flex-shrink: 0;
+      opacity: 0.9;
+    }
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+    .tagline {
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    /* ── Sections ── */
+    section {
+      margin-bottom: 48px;
+    }
+    h2 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin: 24px 0 8px;
+    }
+    h3:first-child { margin-top: 0; }
+    p { margin-bottom: 12px; }
+    p:last-child { margin-bottom: 0; }
+
+    ul, ol {
+      padding-left: 20px;
+      margin-bottom: 12px;
+    }
+    li { margin-bottom: 4px; }
+
+    /* ── Tables ── */
+    .table-wrap {
+      overflow-x: auto;
+      margin-bottom: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.95rem;
+    }
+    th {
+      background: var(--surface);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: var(--surface); }
+
+    /* ── Flow diagram ── */
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+    }
+    .flow-step {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 4px 10px;
+      white-space: nowrap;
+      color: var(--text);
+    }
+    .flow-arrow {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+
+    /* ── Code / kbd ── */
+    code {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.88em;
+      color: var(--accent);
+    }
+
+    /* ── Callouts ── */
+    .warn {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-bdr);
+      border-radius: 8px;
+      padding: 16px 20px;
+      color: var(--warn-txt);
+      margin-bottom: 12px;
+    }
+    .warn strong { color: #ffb347; }
+    .warn ol, .warn ul { color: var(--text); margin-top: 8px; }
+
+    .tip {
+      background: var(--tip-bg);
+      border: 1px solid var(--tip-bdr);
+      border-radius: 8px;
+      padding: 16px 20px;
+      color: var(--tip-txt);
+      margin-bottom: 12px;
+    }
+    .tip strong { color: #80d0ff; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--text); }
+
+    /* ── Responsive ── */
+    @media (max-width: 480px) {
+      h1 { font-size: 1.6rem; }
+      .flow { gap: 4px; font-size: 0.82rem; }
+      .flow-step { padding: 3px 8px; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="logo-row">
+      <!-- Open book icon (CC BY 4.0, IconScout) -->
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="48" height="48" rx="10" fill="#1a1d27"/>
+        <path d="M24 34C24 34 13 28 10 16V12C16 12 22 16 24 20C26 16 32 12 38 12V16C35 28 24 34 24 34Z"
+              fill="none" stroke="#6c8ebf" stroke-width="2" stroke-linejoin="round"/>
+        <line x1="24" y1="20" x2="24" y2="34" stroke="#6c8ebf" stroke-width="2"/>
+      </svg>
+      <h1>GazeBible</h1>
+    </div>
+    <p class="tagline">God's Word for the world &mdash; a Bible reader for the Even G2 smart glasses.<br>
+    65 translations &middot; 30 languages &middot; all free for non-commercial use.</p>
+  </header>
+
+  <section>
+    <h2>Controls</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Action</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>R1 wheel</td><td>Scroll through a list or the reading screen</td></tr>
+          <tr><td>Single click</td><td>Select the highlighted item &mdash; on the reading screen: go to the next chapter</td></tr>
+          <tr><td>Double click</td><td>Go back to the previous screen</td></tr>
+          <tr><td>Tilt head left</td><td>Previous page on the reading screen (ear toward left shoulder)</td></tr>
+          <tr><td>Tilt head right</td><td>Next page on the reading screen (ear toward right shoulder)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tip">
+      <strong>Head tilt tip:</strong> The gesture is a sideways tilt — bring your ear toward your shoulder, not a turn of the head. A roughly 23° tilt is enough to trigger a page turn.
+    </div>
+  </section>
+
+  <section>
+    <h2>Navigation</h2>
+
+    <h3>Navigation flow</h3>
+    <div class="flow">
+      <span class="flow-step">Splash</span><span class="flow-arrow">→</span>
+      <span class="flow-step">App language</span><span class="flow-arrow">→</span>
+      <span class="flow-step">Bible language</span><span class="flow-arrow">→</span>
+      <span class="flow-step">Translation</span><span class="flow-arrow">→</span>
+      <span class="flow-step">OT / NT</span><span class="flow-arrow">→</span>
+      <span class="flow-step">Book</span><span class="flow-arrow">→</span>
+      <span class="flow-step">Chapter</span><span class="flow-arrow">→</span>
+      <span class="flow-step">Reading</span>
+    </div>
+    <p>At every step: scroll with the R1 wheel, click to confirm, double-click to go back.</p>
+
+    <h3>First launch</h3>
+    <p>Every launch starts with the <strong>splash screen</strong> showing the GazeBible logo, version number, and &mdash; once a Bible has been selected &mdash; a verse of the day. Click to continue.</p>
+    <p>The first time you open the app you will be asked to pick a <strong>display language</strong> &mdash; this controls menus and book names. Scroll to your language and click to confirm. This choice is remembered on future launches.</p>
+
+    <h3>Long lists</h3>
+    <p>When a list has more items than fit on screen, a <code>(more...)</code> entry appears at the bottom. Click it to see the next page. A <code>(back...)</code> entry appears at the top to return to the previous page.</p>
+
+    <h3>Testament screen</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Option</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Old Testament</td><td>Browse and read OT books</td></tr>
+          <tr><td>New Testament</td><td>Browse and read NT books</td></tr>
+          <tr><td>Bookmarks</td><td>View, add, and navigate saved bookmarks</td></tr>
+          <tr><td>License</td><td>Shows copyright info for the selected translation</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Reading</h2>
+
+    <h3>Paging through a chapter</h3>
+    <p>Scroll up and down with the R1 wheel to page through the text. Each page is exactly one screenful. Tilt your head left or right to flip pages hands-free.</p>
+    <p>Single-click to advance to the <strong>next chapter</strong>. At the end of the last chapter of a book the app continues into the next book; at the end of the Old Testament it continues into the New Testament. Double-click to go back to the chapter picker.</p>
+
+    <h3>Bookmarks</h3>
+    <p>On the Bookmarks screen you can:</p>
+    <ul>
+      <li><strong>Save</strong> your current position (top item, shown as <code>+ BookName Chapter</code>) &mdash; up to 9 bookmarks, newest first.</li>
+      <li><strong>Jump</strong> to any saved bookmark by clicking it.</li>
+      <li><strong>Clear all</strong> bookmarks with the last item.</li>
+    </ul>
+    <p>Double-click to return to the testament screen.</p>
+
+    <h3>Saved preferences</h3>
+    <p>Your app language, last-used Bible translation, and last-read chapter are all saved automatically. The next launch opens directly on the last chapter you were reading.</p>
+    <p>To switch Bible or language: double-click your way back to the relevant screen. Double-clicking on the app language screen returns to the splash screen.</p>
+
+    <h3>Performance</h3>
+    <p>When you open a chapter, the next and previous chapters are silently fetched in the background. Advancing to the next chapter loads instantly with no loading screen.</p>
+  </section>
+
+  <section>
+    <h2>Known issue: open from phone first</h2>
+    <div class="warn">
+      <strong>&#9888; Important for reliable use</strong>
+      <p style="margin-top:8px;">Due to a bug in the Even Hub SDK, apps launched <strong>directly from the glasses</strong> (without opening the companion app first) may stop responding after about 50 seconds &mdash; scrolling freezes, clicks no longer register.</p>
+      <p>GazeBible includes a keep-alive workaround that helps in most cases, but for the most reliable experience follow these steps:</p>
+      <ol style="margin-top:8px;">
+        <li>Open the <strong>Even app</strong> on your phone.</li>
+        <li>Go to the <strong>Even Hub</strong> tab and open GazeBible from there.</li>
+        <li>Wait for the splash screen to appear on the glasses.</li>
+        <li>Put your phone in your pocket &mdash; the app will keep working normally.</li>
+      </ol>
+    </div>
+  </section>
+
+  <footer>
+    <p>GazeBible &mdash; <a href="https://github.com/eurog33k/GazeBible" target="_blank" rel="noopener">github.com/eurog33k/GazeBible</a></p>
+  </footer>
+
+</div>
+</body>
+</html>
