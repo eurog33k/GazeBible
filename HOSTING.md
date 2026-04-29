@@ -54,7 +54,7 @@ The server layout under `/opt/gazebible/`:
 /opt/gazebible/
 ├── backend/               Express API
 ├── bibles_combined.sqlite Database
-├── dist/                  Built frontend (uploaded by deployfe.sh)
+├── dist/                  Built Even Hub app (served by backend on port 3001)
 └── html/                  Static user manual (uploaded by deployfe.sh)
 ```
 
@@ -92,7 +92,7 @@ Rsyncs `bible/bibles_combined.sqlite` to `/opt/gazebible/bibles_combined.sqlite`
 ./deployfe.sh
 ```
 
-Builds the frontend, uploads `dist/` to the server, and restarts pm2.
+Builds the frontend, uploads `dist/` and `html/` to the server, and restarts pm2.
 
 ### Deploy backend changes
 
@@ -147,7 +147,10 @@ ssh root@<server-ip>
 ln -s /etc/nginx/sites-available/gazebible /etc/nginx/sites-enabled/
 nginx -t && nginx -s reload
 
-# 4. Obtain a Let's Encrypt certificate:
+# 4. Install the certbot nginx plugin (if not already installed):
+apt-get install -y python3-certbot-nginx
+
+# 5. Obtain a Let's Encrypt certificate:
 #    certbot modifies the config to add the SSL server block and HTTP→HTTPS redirect.
 certbot --nginx -d gazebible.nieuwehoop.church
 ```
