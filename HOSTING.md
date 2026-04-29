@@ -167,7 +167,7 @@ The config sets up:
 ### Prerequisites
 
 - **Even Hub CLI** installed globally: `sudo npm install -g @evenrealities/evenhub-cli`
-- **Even Hub developer account** at https://preview.evenhub.evenrealities.com
+- **Even Hub developer account** at https://hub.evenrealities.com/hub
 - **Even app** version 2.1.1 or later on your phone
 
 ### Files already prepared
@@ -210,7 +210,7 @@ This produces `out.ehpk` (~85KB) in the current directory.
 
 **5. Upload to the developer portal**
 
-1. Go to https://preview.evenhub.evenrealities.com
+1. Go to https://hub.evenrealities.com/hub
 2. Log in with your developer account
 3. Create a new app (first time) or update the existing one
 4. Upload `out.ehpk`
