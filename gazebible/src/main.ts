@@ -50,17 +50,17 @@ const SORTED_APP_LANGS = [
 const bridge = await waitForEvenAppBridge();
 let sdkReady = false;
 
-fetch('/api/log', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ level: 'log', msg: '[start] bridge ready' }),
-}).catch(() => {});
-
 // ── API ───────────────────────────────────────────────────────────────────────
 
 const API = import.meta.env.DEV
   ? ''
   : ((import.meta.env.VITE_API_URL as string | undefined) ?? '');
+
+fetch(`${API}/api/log`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ level: 'log', msg: '[start] bridge ready' }),
+}).catch(() => {});
 
 function dbg(msg: string, level: 'log' | 'warn' | 'error' = 'log') {
   console[level](msg);
@@ -583,13 +583,22 @@ async function goSplash() {
   }));
   dbg(`[splash] updateImageRawData result=${imgResult}`);
 
+  async function splashRebuild() {
+    await doRebuild(makeSplashSpec());
+    if (_splashImg) {
+      await bridge.updateImageRawData(new ImageRawDataUpdate({
+        containerID: 1, containerName: 'spl-img', imageData: _splashImg,
+      }));
+    }
+  }
+
   // Fetch votd and battery in background; rebuild splash when either arrives
   const needsRebuild = { votd: false, battery: false };
 
   if (!votdContent) {
     fetchVotd().then(async () => {
       needsRebuild.votd = !!votdContent;
-      if (screen === 'splash' && (needsRebuild.votd || needsRebuild.battery)) await doRebuild(makeSplashSpec());
+      if (screen === 'splash' && (needsRebuild.votd || needsRebuild.battery)) await splashRebuild();
     });
   }
 
@@ -600,7 +609,7 @@ async function goSplash() {
         batteryText = `Battery: ${level}%`;
         dbg(`[splash] battery=${level}%`);
         needsRebuild.battery = true;
-        if (screen === 'splash') await doRebuild(makeSplashSpec());
+        if (screen === 'splash') await splashRebuild();
       }
     }).catch(() => {});
   }
@@ -898,12 +907,14 @@ let _lastTiltAt = 0;
 let _imuLogLast = 0;
 let _lastImuReceived = Date.now(); // updated on every event; watchdog uses this
 
-// Watchdog: if on a reading screen and no IMU events arrive for 6s, restart the IMU.
-// Handles silent imuControl failures and hardware dropout after navigation.
+// Watchdog: if on a reading screen and no IMU events arrive for 3s, restart the IMU.
+// Also resets _imuWearing to true — spurious "not wearing" events from the SDK
+// can stop the IMU and prevent the watchdog itself from restarting it.
 setInterval(() => {
   const needsImu = screen === 'reading' || screen === 'license' || screen === 'appLicense';
-  if (needsImu && _imuForeground && _imuWearing && Date.now() - _lastImuReceived > 3000) {
-    dbg('[imu] watchdog: no events in 3s — restarting');
+  if (needsImu && _imuForeground && Date.now() - _lastImuReceived > 3000) {
+    dbg(`[imu] watchdog: no events in 3s — restarting (wearing=${_imuWearing})`);
+    _imuWearing = true;
     _imuRate = null;
     imuSync();
   }

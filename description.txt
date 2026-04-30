@@ -1,0 +1,17 @@
+GazeBible — God's Word, always with you
+
+Read the Bible completely hands-free on your Even G2 smart glasses. Whether you're commuting, working around the house, or simply want to keep your hands free, GazeBible lets you read and navigate Scripture with just a tilt of your head and a click of the R1 wheel.
+
+Features:
+- 65 Bible translations in 30 languages — KJV, NIV-equivalent public domain versions, Luther, Segond, Reina Valera, and many more
+- Head-tilt page turning — tilt your head left or right to flip pages without touching anything
+- Bookmarks — save up to 9 positions and jump back instantly
+- Verse of the day shown on the start screen each morning
+- Remembers your last position — opens straight to where you left off
+- Fast navigation — next chapter loads instantly thanks to background prefetching
+- Free for personal and non-commercial use
+
+Navigate effortlessly:
+Scroll with the R1 wheel, click to confirm, double-click to go back. Pick your language, choose a translation, and start reading — it takes seconds to get to any book and chapter.
+
+GazeBible is open source. Source code and full documentation at github.com/eurog33k/GazeBible.
