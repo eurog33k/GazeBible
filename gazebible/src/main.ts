@@ -56,38 +56,15 @@ const API = import.meta.env.DEV
   ? ''
   : ((import.meta.env.VITE_API_URL as string | undefined) ?? '');
 
-fetch(`${API}/api/log`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ level: 'log', msg: '[start] bridge ready' }),
-}).catch(() => {});
-
-function dbg(msg: string, level: 'log' | 'warn' | 'error' = 'log') {
-  console[level](msg);
-  fetch(`${API}/api/log`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ level, msg }),
-  }).catch(() => {});
-}
-
 async function apiFetch<T>(path: string, attempt = 0): Promise<T> {
   const url = `${API}${path}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
-  const t0 = Date.now();
-  dbg(`[fetch] → ${url}${attempt > 0 ? ` (attempt ${attempt + 1})` : ''}`);
   try {
     const res = await fetch(url, { signal: controller.signal });
-    const ms = Date.now() - t0;
-    dbg(`[fetch] ← ${res.status} ${url} (${ms}ms)`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json() as T;
-    dbg(`[fetch] parsed ${Array.isArray(data) ? (data as unknown[]).length + ' items' : typeof data} from ${path}`);
-    return data;
+    return await res.json() as T;
   } catch (e) {
-    const ms = Date.now() - t0;
-    dbg(`[fetch] ✗ ${url} (${ms}ms) — ${e}`, 'error');
     if ((e as Error).name === 'AbortError') throw new Error('Server timeout');
     if (attempt < 2) {
       clearTimeout(timer);
@@ -211,27 +188,20 @@ function makeTextReadSpec(title: string, content: string): CreateStartUpPageCont
 }
 
 async function doRebuild(spec: CreateStartUpPageContainer) {
-  const n = spec.listObject?.[0]?.itemContainer?.itemCount ?? 0;
-  dbg(`[render] rebuildPageContainer items=${n}`);
-  const ok = await bridge.rebuildPageContainer(new RebuildPageContainer({
+  await bridge.rebuildPageContainer(new RebuildPageContainer({
     containerTotalNum: spec.containerTotalNum,
     textObject:  spec.textObject,
     listObject:  spec.listObject,
     imageObject: spec.imageObject,
   }));
-  dbg(`[render] rebuildPageContainer ok=${ok}`);
-  if (!ok) dbg(`[render] rebuildPageContainer failed (${n} items)`, 'warn');
 }
 
 async function renderContainer(spec: CreateStartUpPageContainer) {
   if (!sdkReady) {
-    dbg('[render] createStartUpPageContainer');
     const result = await bridge.createStartUpPageContainer(spec);
-    dbg(`[render] createStartUpPageContainer result=${result} (0=ok,1=already-exists,2=oversize,3=oom)`);
     if (result === StartUpPageCreateResult.success) {
       sdkReady = true;
     } else if (result === StartUpPageCreateResult.invalid) {
-      dbg('[render] container exists from previous session, using rebuildPageContainer', 'warn');
       sdkReady = true;
       await doRebuild(spec);
     } else {
@@ -260,9 +230,7 @@ async function showTextReading(title: string, content: string) {
     const ok = await bridge.textContainerUpgrade(new TextContainerUpgrade({
       containerID: 2, containerName: 'rcnt', content: safeContent,
     }));
-    dbg(`[render] textContainerUpgrade ok=${ok}`);
     if (ok) return;
-    dbg('[render] textContainerUpgrade failed, falling back to rebuild', 'warn');
   }
 
   _lastTextReadTitle = safeTitle;
@@ -341,7 +309,6 @@ function prefetchChapter(book: number, ch: number) {
   apiFetch<Verse[]>(`/api/verses/${selLang.dir}/${selBible.file}/${book}/${ch}`)
     .then(vv => {
       _prefetch.set(key, vv.flatMap(v => wrapLines(`${v.verse} ${v.text}`)));
-      dbg(`[prefetch] cached ${key} (${_prefetch.size} in cache)`);
     })
     .catch(() => {}); // silently ignore
 }
@@ -578,10 +545,9 @@ async function goSplash() {
   await renderContainer(makeSplashSpec());
 
   const imgData = await loadSplashImg();
-  const imgResult = await bridge.updateImageRawData(new ImageRawDataUpdate({
+  await bridge.updateImageRawData(new ImageRawDataUpdate({
     containerID: 1, containerName: 'spl-img', imageData: imgData,
   }));
-  dbg(`[splash] updateImageRawData result=${imgResult}`);
 
   async function splashRebuild() {
     await doRebuild(makeSplashSpec());
@@ -607,7 +573,6 @@ async function goSplash() {
       const level = info?.status?.batteryLevel;
       if (level != null) {
         batteryText = `Battery: ${level}%`;
-        dbg(`[splash] battery=${level}%`);
         needsRebuild.battery = true;
         if (screen === 'splash') await splashRebuild();
       }
@@ -754,11 +719,8 @@ async function goBook(isBack = false) {
   if (!selLang || !selBible) return goTestament();
   try {
     if (!cachedBooks) {
-      dbg('[goBook] showing loading');
       await showLoading();
-      dbg('[goBook] fetching books');
       cachedBooks = await apiFetch<BookInfo[]>(`/api/books/${selLang.dir}/${selBible.file}`);
-      dbg(`[goBook] got ${cachedBooks.length} books`);
     }
     const filtered = cachedBooks.filter(b => b.testament === selTestament);
     if (filtered.length === 0) {
@@ -778,14 +740,11 @@ async function goBook(isBack = false) {
       markerLocal = lastBookIdx - pageStart;
       if (markerLocal < 0 || markerLocal >= pageBooks.length) markerLocal = -1;
     }
-    dbg(`[goBook] page=${bookPage} showing=${pageBooks.length}`);
     await showList(
       selTestament === 'OT' ? s().oldTestament : s().newTestament,
       pagedItems(labels, hasPrev, hasMore, markerLocal),
     );
-    dbg('[goBook] showList done');
   } catch (e) {
-    dbg(`[goBook] ERROR: ${e}`, 'error');
     cachedBooks = null;
     await showError(`${e}`);
   }
@@ -821,7 +780,6 @@ async function goReading() {
       if (_prefetch.has(key)) {
         cachedLines = _prefetch.get(key)!;
         _prefetch.delete(key);
-        dbg(`[prefetch] hit ${key}`);
       } else {
         await showLoading(title);
         const verses = await apiFetch<Verse[]>(
@@ -864,13 +822,10 @@ async function imuSync() {
   if (desired === _imuRate) return;
 
   if (desired === null) {
-    // Turn off
-    bridge.imuControl(false).then(ok => dbg(`[imu] stopped: ${ok}`)).catch(() => {});
+    bridge.imuControl(false).catch(() => {});
     _imuRate = null;
   } else {
-    bridge.imuControl(true, desired).then(ok => {
-      dbg(`[imu] rate → ${desired} (${desired === ImuReportPace.P200 ? '5 Hz' : '1 Hz'}): ${ok}`);
-    }).catch(() => {});
+    bridge.imuControl(true, desired).catch(() => {});
     _imuRate = desired;
   }
 }
@@ -904,7 +859,6 @@ const TILT_COOLDOWN_MS = 600;  // minimum time between tilt triggers
 
 let _tiltState: 'neutral' | 'left' | 'right' = 'neutral';
 let _lastTiltAt = 0;
-let _imuLogLast = 0;
 let _lastImuReceived = Date.now(); // updated on every event; watchdog uses this
 
 // Watchdog: if on a reading screen and no IMU events arrive for 3s, restart the IMU.
@@ -913,7 +867,6 @@ let _lastImuReceived = Date.now(); // updated on every event; watchdog uses this
 setInterval(() => {
   const needsImu = screen === 'reading' || screen === 'license' || screen === 'appLicense';
   if (needsImu && _imuForeground && Date.now() - _lastImuReceived > 3000) {
-    dbg(`[imu] watchdog: no events in 3s — restarting (wearing=${_imuWearing})`);
     _imuWearing = true;
     _imuRate = null;
     imuSync();
@@ -922,12 +875,7 @@ setInterval(() => {
 
 function handleImu(x: number, y: number, z: number) {
   _lastImuReceived = Date.now();
-  // Log one reading per second so axis values are always visible in backend console
   const now = Date.now();
-  if (now - _imuLogLast >= 1000) {
-    dbg(`[imu] x=${x.toFixed(3)} y=${y.toFixed(3)} z=${z.toFixed(3)}`);
-    _imuLogLast = now;
-  }
 
   // Use the axis with the largest absolute value as the tilt signal.
   // This avoids needing to know the exact IMU orientation on the hardware.
@@ -940,12 +888,10 @@ function handleImu(x: number, y: number, z: number) {
     if (tiltVal > TILT_THRESHOLD) {
       _tiltState = 'right';
       _lastTiltAt = now;
-      dbg(`[tilt] right → pageNext (tiltVal=${tiltVal.toFixed(3)} x=${x.toFixed(3)} y=${y.toFixed(3)})`);
       pageNext();
     } else if (tiltVal < -TILT_THRESHOLD) {
       _tiltState = 'left';
       _lastTiltAt = now;
-      dbg(`[tilt] left → pagePrev (tiltVal=${tiltVal.toFixed(3)} x=${x.toFixed(3)} y=${y.toFixed(3)})`);
       pagePrev();
     }
   } else {
@@ -968,14 +914,12 @@ bridge.onEvenHubEvent(async (event) => {
     const sysEt = event.sysEvent?.eventType
       ?? OsEventTypeList.fromJson(event.jsonData?.['eventType'] ?? event.jsonData?.['Event_Type']);
     if (sysEt === OsEventTypeList.FOREGROUND_EXIT_EVENT) {
-      dbg('[event] backgrounded — saving position, stopping IMU');
       _imuForeground = false;
       imuSync();
       await savePosition();
       return;
     }
     if (sysEt === OsEventTypeList.FOREGROUND_ENTER_EVENT) {
-      dbg('[event] foregrounded — resuming IMU');
       _imuForeground = true;
       _imuRate = null; // force fresh imuControl call
       imuSync();
@@ -1002,21 +946,15 @@ bridge.onEvenHubEvent(async (event) => {
         if (imuRaw && typeof imuRaw === 'object') {
           const r = imuRaw as Record<string, unknown>;
           handleImu(Number(r['x'] ?? 0), Number(r['y'] ?? 0), Number(r['z'] ?? 0));
-        } else {
-          dbg(`[imu-raw] eventType=${et} jd-keys=${Object.keys(jd).join(',')}`);
         }
         return;
       }
     }
   }
 
-  // Unconditional raw log — fires for every non-IMU event
-  dbg(`[ev] txt.et=${event.textEvent?.eventType ?? '-'} list.et=${event.listEvent?.eventType ?? '-'} list.idx=${event.listEvent?.currentSelectItemIndex ?? '-'} sys.et=${event.sysEvent?.eventType ?? '-'} jd-keys=${event.jsonData ? Object.keys(event.jsonData).join(',') : '-'}`);
-
   // ── Swipes → textEvent (fires for TextContainerProperty with isEventCapture:1) ──
   if (event.textEvent) {
     const et = event.textEvent.eventType;
-    dbg(`[event] textEvent et=${et} screen=${screen}`);
 
     if (et === OsEventTypeList.SCROLL_TOP_EVENT)    return pagePrev();
     if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT) return pageNext();
@@ -1025,7 +963,6 @@ bridge.onEvenHubEvent(async (event) => {
 
   // ── Double-tap → sysEvent type 3 ─────────────────────────────────────────
   if (event.sysEvent?.eventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
-    dbg(`[event] double-tap screen=${screen}`);
     if (screen === 'appLang')    return goSplash();
     if (screen === 'lang')       return goAppLang(true);
     if (screen === 'bible')      return goLang(true);
@@ -1050,14 +987,10 @@ bridge.onEvenHubEvent(async (event) => {
   if (!isClick(listEt) && !isClick(sysEt))  return;
 
   const now = Date.now();
-  if (now - _lastClickAt < CLICK_DEBOUNCE_MS) {
-    dbg(`[event] click debounced (${now - _lastClickAt}ms since last)`);
-    return;
-  }
+  if (now - _lastClickAt < CLICK_DEBOUNCE_MS) return;
   _lastClickAt = now;
 
   const idx = event.listEvent?.currentSelectItemIndex ?? 0;
-  dbg(`[event] click idx=${idx} screen=${screen}`);
 
   if (screen === 'splash') {
     if (idx === 1) return goAppLicense();
@@ -1301,10 +1234,7 @@ async function start() {
   bridge.onDeviceStatusChanged((status) => {
     const wasWearing = _imuWearing;
     _imuWearing = status.isWearing !== false;  // default to true if unknown
-    if (wasWearing !== _imuWearing) {
-      dbg(`[device] wearing=${_imuWearing}`);
-      imuSync();
-    }
+    if (wasWearing !== _imuWearing) imuSync();
   });
 
   await goSplash();
@@ -1312,7 +1242,6 @@ async function start() {
 
 bridge.onLaunchSource((src) => {
   _launchSource = src;
-  dbg(`[launch] source=${src}`);
   if (!launched) {
     start();
   } else if (screen === 'splash') {
