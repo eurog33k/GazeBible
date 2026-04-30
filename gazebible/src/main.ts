@@ -230,7 +230,7 @@ async function showTextReading(title: string, content: string) {
     const ok = await bridge.textContainerUpgrade(new TextContainerUpgrade({
       containerID: 2, containerName: 'rcnt', content: safeContent,
     }));
-    if (ok) return;
+    if (ok) { imuSync(); return; }
   }
 
   _lastTextReadTitle = safeTitle;
@@ -772,6 +772,7 @@ async function goChapter(isBack = false) {
 async function goReading() {
   screen = 'reading';
   if (!selLang || !selBible || !selBook) return goChapter();
+  _imuRate = null; // force fresh imuControl call on every chapter navigation
   const title = `${bookName(selBook.book)} ${selChapter}`;
   try {
     if (!cachedLines) {
@@ -963,6 +964,7 @@ bridge.onEvenHubEvent(async (event) => {
 
   // ── Double-tap → sysEvent type 3 ─────────────────────────────────────────
   if (event.sysEvent?.eventType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+    if (screen === 'splash')     { bridge.shutDownPageContainer(1); return; }
     if (screen === 'appLang')    return goSplash();
     if (screen === 'lang')       return goAppLang(true);
     if (screen === 'bible')      return goLang(true);
@@ -1196,6 +1198,9 @@ let launched = false;
 async function start() {
   if (launched) return;
   launched = true;
+
+  // Render splash immediately so the WebView is never blank during startup.
+  await renderContainer(makeSplashSpec());
 
   const [savedLang, savedPrefs, savedPos] = await Promise.all([
     loadAppLang(), loadPrefs(), loadPosition(),
