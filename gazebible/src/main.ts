@@ -50,6 +50,9 @@ const SORTED_APP_LANGS = [
 const bridge = await waitForEvenAppBridge();
 let sdkReady = false;
 
+const _statusEl = document.getElementById('status');
+if (_statusEl) _statusEl.textContent = 'Running on your glasses';
+
 // ── API ───────────────────────────────────────────────────────────────────────
 
 const API = import.meta.env.DEV
